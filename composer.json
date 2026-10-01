@@ -1,0 +1,21 @@
+{
+    "name": "whitesmoke/core",
+    "description": "Whitesmoke Framework core: HTTP, routing, views, sessions, security, validation, database.",
+    "type": "library",
+    "keywords": ["framework", "php", "whitesmoke"],
+    "require": {
+        "php": ">=8.3",
+        "ext-pdo": "*",
+        "ext-mbstring": "*",
+        "ext-fileinfo": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Whitesmoke\\": "src/"
+        },
+        "files": [
+            "src/helpers.php"
+        ]
+    },
+    "minimum-stability": "stable"
+}
