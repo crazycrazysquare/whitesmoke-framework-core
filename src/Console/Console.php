@@ -28,6 +28,10 @@ final class Console
             Commands\MakeControllerCommand::class,
             Commands\MakeMiddlewareCommand::class,
             Commands\MakeCommandCommand::class,
+            Commands\MakeMigrationCommand::class,
+            Commands\MigrateCommand::class,
+            Commands\MigrateRollbackCommand::class,
+            Commands\MigrateStatusCommand::class,
         ];
 
         $file = BASE_PATH . '/config/commands.php';
