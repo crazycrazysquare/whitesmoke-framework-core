@@ -33,15 +33,22 @@ final class Application
             throw new ErrorException($message, 0, $severity, $file, $line);
         });
 
+        $request = null;
+
         try {
-            $response = $this->handle(Request::capture());
+            $request  = Request::capture();
+            $response = $this->handle($request);
         } catch (HttpException $e) {
             $response = $this->error($e->status());
             if ($e instanceof MethodNotAllowed) {
                 $response->header('Allow', implode(', ', $e->allowed));
             }
         } catch (Throwable $e) {
-            error_log((string) $e);
+            logger()->error($e->getMessage(), [
+                'method'    => $request?->method(),
+                'path'      => $request?->path(),
+                'exception' => $e,
+            ]);
             $response = getenv('APP_DEBUG') === 'true'
                 ? Response::text((string) $e, 500)
                 : $this->error(500);
@@ -79,7 +86,7 @@ final class Application
                 $status
             );
         } catch (Throwable $e) {
-            error_log((string) $e);
+            logger()->error('Error page failed: ' . $e->getMessage(), ['exception' => $e]);
             return Response::text("Error {$status}", $status);
         }
     }

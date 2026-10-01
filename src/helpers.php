@@ -49,3 +49,20 @@ function validate(array $input, array $rules): Whitesmoke\Validation\Validator
 {
     return new Whitesmoke\Validation\Validator($input, $rules);
 }
+
+function logger(): Whitesmoke\Log\Logger
+{
+    static $logger = null;
+
+    if ($logger === null) {
+        $file   = BASE_PATH . '/config/logging.php';
+        $config = (is_file($file) ? require $file : []) + [
+            'path'  => BASE_PATH . '/storage/logs',
+            'level' => 'info',
+            'days'  => 14,
+        ];
+        $logger = new Whitesmoke\Log\Logger($config['path'], $config['level'], (int) $config['days']);
+    }
+
+    return $logger;
+}

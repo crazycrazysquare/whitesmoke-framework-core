@@ -79,6 +79,7 @@ final class Console
         try {
             return $command->handle(Input::parse($args), $this->output);
         } catch (Throwable $e) {
+            logger()->error("Command {$name} failed: " . $e->getMessage(), ['exception' => $e]);
             $this->output->error($e->getMessage());
             if (getenv('APP_DEBUG') === 'true') {
                 $this->output->line($e->getTraceAsString());
