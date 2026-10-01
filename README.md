@@ -3,7 +3,8 @@
 The engine of the Whitesmoke Framework. Install it through the
 [whitesmoke/framework](../framework) skeleton, not directly.
 
-Contains: Application (front controller), Request/Response, Router,
+Contains: Application (front controller), .env loading (vlucas/phpdotenv),
+Request/Response, Router,
 View, Session, CSRF middleware, login Throttle, Validator,
 Database Connection (mysql, pgsql, sqlite, sqlsrv) and Query builder.
 

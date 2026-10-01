@@ -66,3 +66,29 @@ function logger(): Whitesmoke\Log\Logger
 
     return $logger;
 }
+
+/**
+ * Read an environment variable. Unset or blank values return $default.
+ * "true", "false", "null" and "empty" (with or without parentheses)
+ * become true, false, null and "".
+ */
+function env(string $key, mixed $default = null): mixed
+{
+    $value = $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
+
+    if ($value === false || $value === null || $value === '') {
+        return $default;
+    }
+
+    if (!is_string($value)) {
+        return $value;
+    }
+
+    return match (strtolower($value)) {
+        'true', '(true)'   => true,
+        'false', '(false)' => false,
+        'null', '(null)'   => null,
+        'empty', '(empty)' => '',
+        default            => $value,
+    };
+}

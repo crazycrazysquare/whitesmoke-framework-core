@@ -36,6 +36,7 @@ final class Application
         $request = null;
 
         try {
+            Environment::load(BASE_PATH);
             $request  = Request::capture();
             $response = $this->handle($request);
         } catch (HttpException $e) {
@@ -49,7 +50,7 @@ final class Application
                 'path'      => $request?->path(),
                 'exception' => $e,
             ]);
-            $response = getenv('APP_DEBUG') === 'true'
+            $response = env('APP_DEBUG', false) === true
                 ? Response::text((string) $e, 500)
                 : $this->error(500);
         }

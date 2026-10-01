@@ -7,6 +7,7 @@ use ErrorException;
 use InvalidArgumentException;
 use Throwable;
 use Whitesmoke\Foundation\Application;
+use Whitesmoke\Foundation\Environment;
 
 final class Console
 {
@@ -32,6 +33,8 @@ final class Console
             Commands\MigrateCommand::class,
             Commands\MigrateRollbackCommand::class,
             Commands\MigrateStatusCommand::class,
+            Commands\EnvCacheCommand::class,
+            Commands\EnvClearCommand::class,
         ];
 
         $file = BASE_PATH . '/config/commands.php';
@@ -50,6 +53,13 @@ final class Console
             }
             throw new ErrorException($message, 0, $severity, $file, $line);
         });
+
+        try {
+            Environment::load(BASE_PATH);
+        } catch (Throwable $e) {
+            $this->output->error($e->getMessage());
+            return 1;
+        }
 
         $name = $argv[1] ?? 'list';
         $args = array_slice($argv, 2);
@@ -81,7 +91,7 @@ final class Console
         } catch (Throwable $e) {
             logger()->error("Command {$name} failed: " . $e->getMessage(), ['exception' => $e]);
             $this->output->error($e->getMessage());
-            if (getenv('APP_DEBUG') === 'true') {
+            if (env('APP_DEBUG', false) === true) {
                 $this->output->line($e->getTraceAsString());
             }
             return 1;
