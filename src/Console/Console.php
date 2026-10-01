@@ -15,13 +15,13 @@ final class Console
     private array $commands = [];
     private Output $output;
 
-    public function __construct(string $basePath)
+    public function __construct(string $basePath, ?Output $output = null)
     {
         if (!defined('BASE_PATH')) {
             define('BASE_PATH', rtrim($basePath, '/\\'));
         }
 
-        $this->output = new Output();
+        $this->output = $output ?? new Output();
 
         $core = [
             Commands\ServeCommand::class,

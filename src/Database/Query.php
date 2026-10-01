@@ -28,6 +28,7 @@ final class Query
 
     public function select(string ...$columns): self
     {
+        array_map($this->quote(...), $columns);
         $this->columns = $columns ?: ['*'];
         return $this;
     }

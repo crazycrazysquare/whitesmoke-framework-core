@@ -7,20 +7,33 @@ final class Output
 {
     private bool $color;
 
-    public function __construct()
+    /** @var resource */
+    private $out;
+
+    /** @var resource */
+    private $err;
+
+    /**
+     * @param resource|null $out defaults to STDOUT
+     * @param resource|null $err defaults to STDERR
+     */
+    public function __construct($out = null, $err = null)
     {
+        $this->out = $out ?? STDOUT;
+        $this->err = $err ?? STDERR;
+
         $this->color = getenv('NO_COLOR') === false
             && \function_exists('stream_isatty')
-            && @stream_isatty(STDOUT);
+            && @stream_isatty($this->out);
 
         if ($this->color && PHP_OS_FAMILY === 'Windows' && \function_exists('sapi_windows_vt100_support')) {
-            $this->color = @sapi_windows_vt100_support(STDOUT, true);
+            $this->color = @sapi_windows_vt100_support($this->out, true);
         }
     }
 
     public function line(string $text = ''): void
     {
-        @fwrite(STDOUT, $text . PHP_EOL);
+        @fwrite($this->out, $text . PHP_EOL);
     }
 
     public function info(string $text): void
@@ -35,7 +48,7 @@ final class Output
 
     public function error(string $text): void
     {
-        @fwrite(STDERR, $this->paint($text, '31') . PHP_EOL);
+        @fwrite($this->err, $this->paint($text, '31') . PHP_EOL);
     }
 
     public function table(array $headers, array $rows): void
