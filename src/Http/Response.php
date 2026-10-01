@@ -5,12 +5,18 @@ namespace Whitesmoke\Http;
 
 final class Response
 {
+    /** Sent on every response unless the app sets the same header itself. */
     private const SECURITY_HEADERS = [
-        'X-Content-Type-Options'  => 'nosniff',
-        'X-Frame-Options'         => 'DENY',
-        'Referrer-Policy'         => 'strict-origin-when-cross-origin',
-        'Content-Security-Policy' => "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        'X-Content-Type-Options'       => 'nosniff',
+        'X-Frame-Options'              => 'DENY',
+        'Referrer-Policy'              => 'strict-origin-when-cross-origin',
+        'Content-Security-Policy'      => "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        'Cross-Origin-Opener-Policy'   => 'same-origin',
+        'Permissions-Policy'           => 'camera=(), microphone=(), geolocation=(), payment=()',
     ];
+
+    /** Sent only over HTTPS. */
+    private const HSTS = 'max-age=31536000';
 
     private array $headers = [];
 
@@ -34,7 +40,10 @@ final class Response
 
     public static function redirect(string $to, int $status = 302): self
     {
-        if (!str_starts_with($to, '/') || str_starts_with($to, '//') || str_contains($to, '\\')) {
+        // Browsers strip tabs and newlines from URLs, so "/\t/evil.example" would become
+        // "//evil.example". Reject control characters and spaces outright.
+        if (!str_starts_with($to, '/') || str_starts_with($to, '//') || str_contains($to, '\\')
+            || preg_match('~[\x00-\x20\x7F]~', $to)) {
             throw new \InvalidArgumentException('Redirects must be local paths');
         }
 
@@ -49,6 +58,29 @@ final class Response
 
         $this->headers[$name] = $value;
         return $this;
+    }
+
+    /** Final headers: the app's own headers win over the security defaults. */
+    public function headers(): array
+    {
+        $defaults = self::SECURITY_HEADERS;
+
+        $https = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+            || (string) ($_SERVER['SERVER_PORT'] ?? '') === '443';
+
+        if ($https) {
+            $defaults['Strict-Transport-Security'] = self::HSTS;
+        }
+
+        $set = array_change_key_case($this->headers, CASE_LOWER);
+
+        foreach ($defaults as $name => $value) {
+            if (!isset($set[strtolower($name)])) {
+                $this->headers[$name] ??= $value;
+            }
+        }
+
+        return $this->headers;
     }
 
     public function status(): int
@@ -66,7 +98,7 @@ final class Response
         header_remove('X-Powered-By');
         http_response_code($this->status);
 
-        foreach (self::SECURITY_HEADERS + $this->headers as $name => $value) {
+        foreach ($this->headers() as $name => $value) {
             header("{$name}: {$value}");
         }
 

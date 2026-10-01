@@ -41,13 +41,20 @@ final class ServeCommand implements Command
 
         putenv('SESSION_SECURE=false');
 
-        $output->info("Whitesmoke development server: http://{$host}:{$port}");
+        $address = str_contains($host, ':') ? "[{$host}]:{$port}" : "{$host}:{$port}";
+
+        $output->info("Whitesmoke development server: http://{$address}");
         $output->comment('Press Ctrl+C to stop. Development only, never use in production.');
 
+        if (!in_array($host, ['127.0.0.1', 'localhost', '::1'], true)) {
+            $output->error("Warning: {$host} makes this server reachable from other devices on your network,");
+            $output->error('with insecure session cookies and possibly debug output. Never use it with real data.');
+        }
+
         $command = implode(' ', array_map('escapeshellarg', [
-            PHP_BINARY, '-S', "{$host}:{$port}",
+            PHP_BINARY, '-S', $address,
             '-t', BASE_PATH . '/public',
-            BASE_PATH . '/public/index.php',
+            dirname(__DIR__) . '/server.php',
         ]));
 
         passthru($command, $code);

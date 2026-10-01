@@ -28,7 +28,10 @@ final class ResponseTest extends TestCase
 
     public function testExternalRedirectsRejected(): void
     {
-        foreach (['https://evil.example', '//evil.example', '/\\evil.example', 'evil.example', 'javascript:alert(1)'] as $to) {
+        $bad = ['https://evil.example', '//evil.example', '/\\evil.example', 'evil.example', 'javascript:alert(1)',
+                "/\t/evil.example", "/\n/evil.example", "/\r/evil.example", '/ /evil.example', "/\x0b/evil.example", "/\x00/x", "/\x7f/x"];
+
+        foreach ($bad as $to) {
             try {
                 Response::redirect($to);
                 $this->fail("Redirect to {$to} should be rejected");
@@ -48,5 +51,36 @@ final class ResponseTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
         Response::text('x')->header("X-A\nX-B", 'v');
+    }
+
+    public function testSecurityHeadersPresent(): void
+    {
+        $h = Response::html('x')->headers();
+
+        foreach (['X-Content-Type-Options', 'X-Frame-Options', 'Referrer-Policy', 'Content-Security-Policy', 'Cross-Origin-Opener-Policy', 'Permissions-Policy'] as $name) {
+            $this->assertArrayHasKey($name, $h);
+        }
+    }
+
+    public function testAppHeadersOverrideDefaultsCaseInsensitively(): void
+    {
+        $h = Response::html('x')->header('content-security-policy', 'default-src https:')->headers();
+
+        $csp = array_filter($h, fn (string $k): bool => strtolower($k) === 'content-security-policy', ARRAY_FILTER_USE_KEY);
+        $this->assertSame(['content-security-policy' => 'default-src https:'], $csp);
+    }
+
+    public function testHstsOnlyOverHttps(): void
+    {
+        unset($_SERVER['HTTPS'], $_SERVER['SERVER_PORT']);
+        $this->assertArrayNotHasKey('Strict-Transport-Security', Response::html('x')->headers());
+
+        $_SERVER['HTTPS'] = 'on';
+        $this->assertSame('max-age=31536000', Response::html('x')->headers()['Strict-Transport-Security']);
+
+        $_SERVER['HTTPS'] = 'off';
+        $this->assertArrayNotHasKey('Strict-Transport-Security', Response::html('x')->headers());
+
+        unset($_SERVER['HTTPS']);
     }
 }

@@ -63,4 +63,33 @@ final class ThrottleTest extends DatabaseTestCase
 
         $this->assertSame(1, $t->hit('k', 5, 900), 'old attempts outside the window are forgotten');
     }
+
+    public function testCountKeepsGrowingWhileLocked(): void
+    {
+        $t = new Throttle();
+        foreach ([1, 2, 3] as $expected) {
+            $this->assertSame($expected, $t->hit('k', 3, 900));
+        }
+
+        $this->assertTrue($t->tooMany('k'));
+        $this->assertSame(4, $t->hit('k', 3, 900), 'requests that raced past the lock check still see they are over the limit');
+        $this->assertSame(5, $t->hit('k', 3, 900));
+    }
+
+    public function testLockIsNotExtendedByAttemptsDuringIt(): void
+    {
+        $t = new Throttle();
+        $t->hit('k', 1, 900);
+        table('throttle')->where('throttle_key', '=', 'k')->update(['locked_until' => time() + 100]);
+
+        $t->hit('k', 1, 900);
+
+        $this->assertLessThanOrEqual(100, $t->availableIn('k'));
+    }
+
+    public function testRejectsUnsafeTableName(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new Throttle('throttle; DROP TABLE users');
+    }
 }
