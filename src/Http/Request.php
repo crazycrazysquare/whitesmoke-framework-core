@@ -14,6 +14,7 @@ final class Request
         private readonly array $files,
         private readonly array $server,
         private readonly array $proxies,
+        private readonly array $cookies = [],
     ) {}
 
     /**
@@ -33,7 +34,16 @@ final class Request
             self::normalizeFiles($_FILES),
             $_SERVER,
             array_map(self::network(...), array_values($trustedProxies)),
+            $_COOKIE,
         );
+    }
+
+    /** A cookie's value; null when missing, not a string, or not valid UTF-8 without null bytes. */
+    public function cookie(string $key): ?string
+    {
+        $value = $this->cookies[$key] ?? null;
+
+        return is_string($value) && mb_check_encoding($value, 'UTF-8') && !str_contains($value, "\0") ? $value : null;
     }
 
     public function method(): string
