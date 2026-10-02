@@ -37,10 +37,44 @@ jobs:
           ini-values: error_reporting=-1
           coverage: none
       - run: composer update --no-interaction --no-progress --prefer-dist
-      - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices --log-junit build/junit.xml
+      - name: Test on in-memory SQLite
+        run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices --log-junit build/junit.xml
+      - name: Test on a SQLite file (runs the simultaneous-login test too)
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ${{ runner.temp }}/whitesmoke-test.sqlite
+        run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices --log-junit build/junit-file.xml
       - name: Show failing tests as annotations
         if: failure()
-        run: php .github/junit-annotations.php build/junit.xml
+        run: php .github/junit-annotations.php build/junit.xml build/junit-file.xml
+
+  # SQLite before 3.35 has no RETURNING, so the throttle uses its BEGIN IMMEDIATE
+  # fallback. Debian 11's PHP image ships SQLite 3.34.1 (pinned by digest).
+  sqlite-old:
+    name: PHP 8.3 · SQLite 3.34 · Debian 11
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      IMAGE: php@sha256:ce8ad0e306131c2fa3fe613aa167c360176d77a2b2411c33132687259da9b3d8 # php:8.3-cli-bullseye
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - run: composer update --no-interaction --no-progress --prefer-dist
+      - name: Check that the image still has SQLite older than 3.35
+        run: |
+          docker run --rm "$IMAGE" php -r '$v = (new PDO("sqlite::memory:"))->query("SELECT sqlite_version()")->fetchColumn(); echo "SQLite $v\n"; exit(version_compare($v, "3.35.0", "<") ? 0 : 1);'
+      - name: Test on in-memory SQLite
+        run: docker run --rm -v "$PWD:/app" -w /app "$IMAGE" php -d error_reporting=-1 vendor/bin/phpunit --stderr --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices --log-junit build/junit.xml
+      - name: Test on a SQLite file (runs the simultaneous-login test too)
+        run: docker run --rm -v "$PWD:/app" -w /app -e DB_CONNECTION=sqlite -e DB_DATABASE=/tmp/whitesmoke-test.sqlite "$IMAGE" php -d error_reporting=-1 vendor/bin/phpunit --stderr --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices --log-junit build/junit-file.xml
+      - name: Show failing tests as annotations
+        if: failure()
+        run: php .github/junit-annotations.php build/junit.xml build/junit-file.xml
 
   mysql:
     name: PHP ${{ matrix.php }} · ${{ matrix.db }}
