@@ -1,0 +1,3 @@
+# LF everywhere, also on Windows clones with core.autocrlf=true:
+# views render their line endings, and "smoke" needs an LF shebang.
+* text=auto eol=lf
