@@ -20,6 +20,10 @@ final class Response
 
     private array $headers = [];
     private ?bool $https = null;
+    private ?string $file = null;
+
+    /** Types a browser may show inline; everything else is always a download. */
+    private const INLINE = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
 
     public function __construct(private readonly string $body = '', private readonly int $status = 200) {}
 
@@ -37,6 +41,38 @@ final class Response
     {
         return (new self(json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE), $status))
             ->header('Content-Type', 'application/json');
+    }
+
+    /**
+     * Send a file from disk, streamed rather than loaded into memory. $name is the
+     * file name the visitor sees (any characters; it is encoded safely). $inline
+     * shows images and PDFs in the browser; every other type is always a download.
+     */
+    public static function download(string $path, string $name, string $type, bool $inline = false): self
+    {
+        if (!is_file($path) || !is_readable($path)) {
+            throw new \InvalidArgumentException('File to download does not exist');
+        }
+        if (!preg_match('~^[a-z0-9][a-z0-9.+-]*/[a-z0-9][a-z0-9.+-]*\z~i', $type)) {
+            throw new \InvalidArgumentException('Invalid content type');
+        }
+
+        $name     = (string) preg_replace('~[\x00-\x1F\x7F]~u', '', mb_check_encoding($name, 'UTF-8') ? $name : '') ?: 'download';
+        $fallback = trim((string) preg_replace('~[^A-Za-z0-9._ -]+~', '_', $name), ' .') ?: 'download';
+        $mode     = $inline && in_array(strtolower($type), self::INLINE, true) ? 'inline' : 'attachment';
+
+        $response = (new self('', 200))
+            ->header('Content-Type', $type)
+            ->header('Content-Length', (string) filesize($path))
+            ->header('Content-Disposition', "{$mode}; filename=\"{$fallback}\"; filename*=UTF-8''" . rawurlencode($name))
+            ->header('Cache-Control', 'private, no-cache')
+            // Nothing in a served file may run. Chrome refuses to show PDFs under "sandbox".
+            ->header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'"
+                . ($mode === 'inline' && strtolower($type) === 'application/pdf' ? '' : '; sandbox'));
+
+        $response->file = $path;
+
+        return $response;
     }
 
     public static function redirect(string $to, int $status = 302): self
@@ -108,6 +144,11 @@ final class Response
 
         foreach ($this->headers() as $name => $value) {
             header("{$name}: {$value}");
+        }
+
+        if ($this->file !== null) {
+            readfile($this->file);
+            return;
         }
 
         echo $this->body;

@@ -110,3 +110,11 @@ function env(string $key, mixed $default = null): mixed
         default            => $value,
     };
 }
+
+/** Uploaded files in storage/uploads (see Whitesmoke\Storage\Uploads). */
+function uploads(): Whitesmoke\Storage\Uploads
+{
+    static $uploads = null;
+
+    return $uploads ??= new Whitesmoke\Storage\Uploads(BASE_PATH . '/storage/uploads');
+}
