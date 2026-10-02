@@ -67,7 +67,8 @@ PHP);
         $this->migration(
             '2026_01_03_000000_add_qty_to_items_table',
             "\$schema->table('m_items', fn (Blueprint \$t) => \$t->integer('qty')->default(0));",
-            "\$schema->raw('ALTER TABLE ' . (\$schema->driver() === 'mysql' ? '`m_items`' : '\"m_items\"') . ' DROP COLUMN qty');"
+            "if (\$schema->driver() === 'sqlsrv') { \$schema->raw('ALTER TABLE [m_items] DROP CONSTRAINT [df_m_items_qty]'); }"
+            . " \$schema->raw('ALTER TABLE ' . match (\$schema->driver()) { 'mysql' => '`m_items`', 'sqlsrv' => '[m_items]', default => '\"m_items\"' } . ' DROP COLUMN qty');"
         );
         $this->migrator()->migrate();
 

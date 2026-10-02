@@ -59,6 +59,75 @@ final class SchemaTest extends DatabaseTestCase
         $this->assertSame(10000, strlen($row['body']));
     }
 
+    public function testSqlServerDefaultsHavePredictableNames(): void
+    {
+        if ($this->schema()->driver() !== 'sqlsrv') {
+            $this->markTestSkipped('SQL Server only.');
+        }
+
+        $this->schema()->create('s_types', function (Blueprint $t): void {
+            $t->id();
+            $t->integer('qty')->default(0);
+        });
+        $this->schema()->table('s_types', fn (Blueprint $t) => $t->dateTime('seen_at')->useCurrent());
+
+        $names = db()->query("SELECT name FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('s_types') ORDER BY name")->fetchAll(\PDO::FETCH_COLUMN);
+        $this->assertSame(['df_s_types_qty', 'df_s_types_seen_at'], $names);
+
+        foreach (['qty', 'seen_at'] as $column) {
+            $this->schema()->raw("ALTER TABLE [s_types] DROP CONSTRAINT [df_s_types_{$column}]");
+            $this->schema()->raw("ALTER TABLE [s_types] DROP COLUMN [{$column}]");
+        }
+
+        $columns = db()->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 's_types'")->fetchAll(\PDO::FETCH_COLUMN);
+        $this->assertSame(['id'], $columns);
+    }
+
+    public function testNullableUniqueAllowsManyNullsButNoDuplicates(): void
+    {
+        $this->schema()->create('s_types', function (Blueprint $t): void {
+            $t->id();
+            $t->string('code', 10)->nullable()->unique();
+        });
+
+        table('s_types')->insert(['code' => null]);
+        table('s_types')->insert(['code' => null]);
+        table('s_types')->insert(['code' => 'A1']);
+        $this->assertSame(3, table('s_types')->count());
+
+        try {
+            table('s_types')->insert(['code' => 'A1']);
+            $this->fail('Duplicate value must be rejected');
+        } catch (PDOException $e) {
+            $this->assertSame(3, table('s_types')->count());
+        }
+
+        if ($this->schema()->driver() === 'sqlsrv') {
+            $index = db()->query("SELECT name FROM sys.indexes WHERE object_id = OBJECT_ID('s_types') AND is_unique = 1 AND has_filter = 1")->fetchColumn();
+            $this->assertSame('uq_s_types_code', $index);
+        }
+    }
+
+    public function testHasTableIgnoresTablesInOtherSchemas(): void
+    {
+        $driver = $this->schema()->driver();
+
+        if ($driver !== 'sqlsrv' && $driver !== 'pgsql') {
+            $this->markTestSkipped('PostgreSQL and SQL Server only.');
+        }
+
+        $create = $driver === 'sqlsrv' ? "EXEC('CREATE SCHEMA ws_other')" : 'CREATE SCHEMA ws_other';
+        db()->exec($create);
+
+        try {
+            db()->exec('CREATE TABLE ws_other.s_ghost (id INT)');
+            $this->assertFalse($this->schema()->hasTable('s_ghost'));
+        } finally {
+            db()->exec('DROP TABLE IF EXISTS ws_other.s_ghost');
+            db()->exec('DROP SCHEMA ws_other');
+        }
+    }
+
     public function testDecimalKeepsExactCents(): void
     {
         $this->schema()->create('s_types', function (Blueprint $t): void {

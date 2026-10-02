@@ -29,7 +29,7 @@ final class Schema
 
         $parts = [];
         foreach ($blueprint->columns() as $column) {
-            $parts[] = $this->columnSql($column);
+            $parts[] = $this->columnSql($table, $column);
         }
         foreach ($blueprint->columns() as $column) {
             if ($column->foreign !== null) {
@@ -61,7 +61,7 @@ final class Schema
                 throw new LogicException('SQLite cannot add a foreign key to an existing table');
             }
 
-            $this->pdo->exec('ALTER TABLE ' . $this->quote($table) . " {$add} " . $this->columnSql($column));
+            $this->pdo->exec('ALTER TABLE ' . $this->quote($table) . " {$add} " . $this->columnSql($table, $column));
 
             if ($column->foreign !== null) {
                 $this->pdo->exec('ALTER TABLE ' . $this->quote($table) . ' ADD CONSTRAINT '
@@ -90,7 +90,7 @@ final class Schema
             'sqlite' => "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
             'mysql'  => 'SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?',
             'pgsql'  => 'SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?',
-            'sqlsrv' => 'SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?',
+            'sqlsrv' => 'SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = SCHEMA_NAME() AND TABLE_NAME = ?',
         };
 
         $stmt = $this->pdo->prepare($sql);
@@ -105,7 +105,7 @@ final class Schema
         $this->pdo->exec($sql);
     }
 
-    private function columnSql(Column $c): string
+    private function columnSql(string $table, Column $c): string
     {
         $d = $this->driver;
 
@@ -133,13 +133,17 @@ final class Schema
 
         $sql = $this->quote($c->name) . ' ' . $type . ($c->nullable ? ' NULL' : ' NOT NULL');
 
-        if ($c->useCurrent) {
-            $sql .= ' DEFAULT CURRENT_TIMESTAMP';
-        } elseif ($c->hasDefault) {
-            $sql .= ' DEFAULT ' . $this->literal($c->default, $c->type);
+        if ($c->useCurrent || $c->hasDefault) {
+            // SQL Server stores a default as a constraint and blocks DROP COLUMN until
+            // it is dropped; a predictable name (df_<table>_<column>) makes that possible.
+            if ($d === 'sqlsrv') {
+                $sql .= ' CONSTRAINT ' . $this->quote($this->name('df', $table, [$c->name]));
+            }
+            $sql .= ' DEFAULT ' . ($c->useCurrent ? 'CURRENT_TIMESTAMP' : $this->literal($c->default, $c->type));
         }
 
-        if ($c->unique) {
+        // SQL Server gets a unique index instead (see createIndexes()).
+        if ($c->unique && $d !== 'sqlsrv') {
             $sql .= ' UNIQUE';
         }
 
@@ -161,6 +165,18 @@ final class Schema
 
     private function createIndexes(string $table, Blueprint $blueprint): void
     {
+        // A SQL Server UNIQUE constraint allows only one NULL, unlike the other databases;
+        // a unique index filtered to non-NULL values behaves the same everywhere.
+        if ($this->driver === 'sqlsrv') {
+            foreach ($blueprint->columns() as $column) {
+                if ($column->unique) {
+                    $this->pdo->exec('CREATE UNIQUE INDEX ' . $this->quote($this->name('uq', $table, [$column->name]))
+                        . ' ON ' . $this->quote($table) . ' (' . $this->quote($column->name) . ')'
+                        . ($column->nullable ? ' WHERE ' . $this->quote($column->name) . ' IS NOT NULL' : ''));
+                }
+            }
+        }
+
         foreach ($blueprint->indexes() as $columns) {
             $this->pdo->exec('CREATE INDEX ' . $this->quote($this->name('idx', $table, $columns))
                 . ' ON ' . $this->quote($table)
