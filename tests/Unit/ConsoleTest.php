@@ -101,6 +101,24 @@ final class ConsoleTest extends TestCase
         }
     }
 
+    public function testRunRestoresTheErrorHandler(): void
+    {
+        $before = $this->currentErrorHandler();
+
+        $this->smoke();
+        $this->smoke('nope');
+        $this->smoke('migrate', '--connection=does_not_exist');
+
+        $this->assertSame($before, $this->currentErrorHandler(), 'run() must not leave its error handler behind');
+    }
+
+    private function currentErrorHandler(): mixed
+    {
+        $handler = set_error_handler(static fn (): bool => false);
+        restore_error_handler();
+        return $handler;
+    }
+
     public function testFailingCommandReturnsOneWithMessage(): void
     {
         $this->assertSame(1, $this->smoke('migrate', '--connection=does_not_exist'));

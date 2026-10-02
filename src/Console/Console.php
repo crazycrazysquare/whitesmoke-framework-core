@@ -55,6 +55,15 @@ final class Console
         });
 
         try {
+            return $this->dispatch($argv);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    private function dispatch(array $argv): int
+    {
+        try {
             Environment::load(BASE_PATH);
         } catch (Throwable $e) {
             $this->output->error($e->getMessage());
