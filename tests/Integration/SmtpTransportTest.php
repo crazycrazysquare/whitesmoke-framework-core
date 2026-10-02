@@ -221,6 +221,23 @@ final class SmtpTransportTest extends TestCase
         $this->assertContains('Open the link.', $lines);
     }
 
+    public function testMailerSendsHtmlWithTextAlternative(): void
+    {
+        $this->startServer('plain');
+
+        (new Mailer([
+            'driver' => 'smtp', 'host' => '127.0.0.1', 'port' => $this->port, 'encryption' => 'none',
+            'from_address' => 'app@example.test',
+        ]))->send(new Message('ana@example.test', 'Report', "Plain version\n.dot line", "<p>HTML version</p>\n.dot line"));
+
+        $lines = $this->received();
+        $this->assertNotEmpty(preg_grep('~^Content-Type: multipart/alternative; boundary="ws-[0-9a-f]{32}"$~', $lines));
+        $this->assertContains('Content-Type: text/plain; charset=UTF-8', $lines);
+        $this->assertContains('Content-Type: text/html; charset=UTF-8', $lines);
+        $this->assertContains('<p>HTML version</p>', $lines);
+        $this->assertSame(2, count(array_keys($lines, '..dot line')), 'lines starting with a dot are doubled in both parts');
+    }
+
     /** A self-signed certificate for 127.0.0.1, or skip where OpenSSL cannot make one. */
     private function selfSignedCertificate(): string
     {

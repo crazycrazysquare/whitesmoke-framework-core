@@ -62,6 +62,55 @@ final class MailTest extends TestCase
         $this->assertSame('Grüße ' . str_repeat('x', 200), quoted_printable_decode($body));
     }
 
+    public function testHtmlIsSentWithAPlainTextAlternative(): void
+    {
+        $text = "Hello Ana,\nopen https://app.example.test/reset-password?token=abc\n" . str_repeat('long line ', 20);
+        $html = "<!doctype html>\n<p>Hello <b>Ana</b>,</p>\n<p><a href=\"https://app.example.test/reset-password?token=abc\">Choose a new password</a></p>\n<p>Grüße</p>";
+
+        $raw     = (new Message('ana@example.test', 'Reset', $text, $html))->render('app@example.test', 'App');
+        $headers = $this->headers($raw);
+
+        $this->assertSame('1.0', $headers['MIME-Version']);
+        $this->assertArrayNotHasKey('Content-Transfer-Encoding', $headers);
+        $this->assertMatchesRegularExpression('~^multipart/alternative; boundary="(ws-[0-9a-f]{32})"$~', $headers['Content-Type']);
+        preg_match('~boundary="([^"]+)"~', $headers['Content-Type'], $m);
+        $boundary = $m[1];
+
+        [, $body] = explode("\r\n\r\n", $raw, 2);
+        $this->assertStringEndsWith("\r\n--{$boundary}--\r\n", $body);
+
+        $parts = array_slice(explode("--{$boundary}", $body), 1, 2);
+        $this->assertCount(2, $parts);
+
+        $decoded = [];
+        foreach ($parts as $part) {
+            [$partHead, $partBody] = explode("\r\n\r\n", ltrim($part, "\r\n"), 2);
+            $this->assertStringContainsString('Content-Transfer-Encoding: quoted-printable', $partHead);
+            foreach (explode("\r\n", $partBody) as $line) {
+                $this->assertLessThanOrEqual(76, strlen($line));
+            }
+            preg_match('~Content-Type: (text/\w+); charset=UTF-8~', $partHead, $type);
+            $decoded[$type[1]] = quoted_printable_decode(substr($partBody, 0, -2));
+        }
+
+        $this->assertSame(['text/plain', 'text/html'], array_keys($decoded), 'text first, so the HTML is preferred');
+        $this->assertSame(str_replace("\n", "\r\n", $text), $decoded['text/plain']);
+        $this->assertSame(str_replace("\n", "\r\n", $html), $decoded['text/html']);
+        $this->assertSame(3, substr_count($raw, "--{$boundary}"), 'the boundary appears only as delimiters');
+    }
+
+    public function testInvalidHtmlBodiesAreRefused(): void
+    {
+        foreach (['', "  \n", "<p>a\0b</p>", "<p>\xC3\x28</p>"] as $html) {
+            try {
+                new Message('ana@example.test', 'Hi', 'text', $html);
+                $this->fail('Should refuse ' . json_encode($html));
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     public function testHeaderInjectionAndBadAddressesAreRefused(): void
     {
         $bad = [
