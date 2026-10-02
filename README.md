@@ -1,5 +1,7 @@
 # whitesmoke/core
 
+[![Tests](https://github.com/crazycrazysquare/whitesmoke-framework-core/actions/workflows/tests.yml/badge.svg)](https://github.com/crazycrazysquare/whitesmoke-framework-core/actions/workflows/tests.yml)
+
 The engine of the Whitesmoke Framework. Install it through the
 [whitesmoke/framework](https://github.com/crazycrazysquare/whitesmoke-framework-starter)
 skeleton, not directly.
