@@ -1,7 +1,8 @@
 # whitesmoke/core
 
 The engine of the Whitesmoke Framework. Install it through the
-[whitesmoke/framework](../framework) skeleton, not directly.
+[whitesmoke/framework](https://github.com/crazycrazysquare/whitesmoke-framework-starter)
+skeleton, not directly.
 
 Contains: Application (front controller), .env loading (vlucas/phpdotenv),
 Request/Response, Router,
@@ -21,3 +22,7 @@ Against a real database (use an empty, throwaway database; tests create and drop
     DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_DATABASE=whitesmoke_test DB_USERNAME=me DB_PASSWORD=secret composer test
 
 `composer test` runs `phpunit --stderr`; session tests need the `--stderr` flag.
+
+## License
+
+MIT. See `LICENSE`.
