@@ -33,11 +33,20 @@ final class Application
             throw new ErrorException($message, 0, $severity, $file, $line);
         });
 
+        $response = $this->respond();
+
+        session()->close();
+        $response->send();
+    }
+
+    /** Capture the request and build its response, error pages included. run() sends it. */
+    public function respond(): Response
+    {
         $request = null;
 
         try {
             Environment::load(BASE_PATH);
-            $request  = Request::capture();
+            $request  = Request::capture(self::trustedProxies());
             $response = $this->handle($request);
         } catch (HttpException $e) {
             $response = $this->error($e->status());
@@ -55,8 +64,28 @@ final class Application
                 : $this->error(500);
         }
 
-        session()->close();
-        $response->send();
+        if ($request !== null) {
+            $response->https($request->isSecure());
+        }
+
+        return $response;
+    }
+
+    /** Trusted proxies from config/proxies.php: a list, or a comma-separated string from .env. */
+    private static function trustedProxies(): array
+    {
+        $file    = BASE_PATH . '/config/proxies.php';
+        $trusted = is_file($file) ? ((require $file)['trusted'] ?? []) : [];
+
+        if (is_string($trusted)) {
+            $trusted = array_filter(array_map('trim', explode(',', $trusted)), fn (string $p): bool => $p !== '');
+        }
+
+        if (!is_array($trusted)) {
+            throw new RuntimeException('config/proxies.php: "trusted" must be a list or a comma-separated string');
+        }
+
+        return array_values($trusted);
     }
 
     public function handle(Request $request): Response

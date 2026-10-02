@@ -121,4 +121,45 @@ final class ApplicationTest extends TestCase
 
         session()->close();
     }
+
+    /** respond() for GET / from $remote with the given TRUSTED_PROXIES and X-Forwarded-Proto. */
+    private function respondBehindProxy(string $trusted, string $remote, ?string $proto): Response
+    {
+        $_ENV['TRUSTED_PROXIES'] = $trusted;
+        $_SERVER['REMOTE_ADDR']  = $remote;
+        unset($_SERVER['HTTPS'], $_SERVER['SERVER_PORT'], $_SERVER['HTTP_X_FORWARDED_PROTO']);
+        if ($proto !== null) {
+            $_SERVER['HTTP_X_FORWARDED_PROTO'] = $proto;
+        }
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+        $_SERVER['REQUEST_URI']    = '/';
+
+        try {
+            return (new Application(BASE_PATH))->respond();
+        } finally {
+            unset($_ENV['TRUSTED_PROXIES'], $_SERVER['REMOTE_ADDR'], $_SERVER['HTTP_X_FORWARDED_PROTO']);
+        }
+    }
+
+    public function testHstsBehindATrustedHttpsProxy(): void
+    {
+        $hsts = fn (Response $r): bool => isset($r->headers()['Strict-Transport-Security']);
+
+        $this->assertTrue($hsts($this->respondBehindProxy('10.0.0.0/8, 192.168.1.10', '10.0.0.5', 'https')));
+        $this->assertFalse($hsts($this->respondBehindProxy('', '10.0.0.5', 'https')), 'no trusted proxies: header ignored');
+        $this->assertFalse($hsts($this->respondBehindProxy('10.0.0.0/8', '198.51.100.9', 'https')), 'sender is not a trusted proxy');
+        $this->assertFalse($hsts($this->respondBehindProxy('10.0.0.0/8', '10.0.0.5', 'http')));
+    }
+
+    public function testInvalidTrustedProxiesFailClosed(): void
+    {
+        $response = $this->respondBehindProxy('10.0.0.0/8, *', '10.0.0.5', 'https');
+
+        $this->assertSame(500, $response->status());
+        $this->assertArrayNotHasKey('Strict-Transport-Security', $response->headers());
+
+        $logs = glob(WS_TEST_TMP . '/logs/whitesmoke-*.log') ?: [];
+        $this->assertNotEmpty($logs);
+        $this->assertStringContainsString('Invalid trusted proxy "*"', (string) file_get_contents($logs[0]));
+    }
 }

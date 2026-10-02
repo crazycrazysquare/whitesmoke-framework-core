@@ -19,6 +19,7 @@ final class Response
     private const HSTS = 'max-age=31536000';
 
     private array $headers = [];
+    private ?bool $https = null;
 
     public function __construct(private readonly string $body = '', private readonly int $status = 200) {}
 
@@ -60,13 +61,20 @@ final class Response
         return $this;
     }
 
+    /** Whether the request came over HTTPS (set by Application from Request::isSecure()). */
+    public function https(bool $https): self
+    {
+        $this->https = $https;
+        return $this;
+    }
+
     /** Final headers: the app's own headers win over the security defaults. */
     public function headers(): array
     {
         $defaults = self::SECURITY_HEADERS;
 
-        $https = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
-            || (string) ($_SERVER['SERVER_PORT'] ?? '') === '443';
+        $https = $this->https ?? ((!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+            || (string) ($_SERVER['SERVER_PORT'] ?? '') === '443');
 
         if ($https) {
             $defaults['Strict-Transport-Security'] = self::HSTS;
