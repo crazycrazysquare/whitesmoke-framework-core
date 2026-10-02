@@ -69,9 +69,17 @@ final class Connection
     {
         self::guard($c['host'], $c['database']);
 
+        // Encryption is always on. Trusting the certificate without checking it is
+        // opt-in, for servers with a self-signed certificate (local, Docker).
+        $trust = $c['trust_server_certificate'] ?? false;
+
+        if (!is_bool($trust)) {
+            throw new InvalidArgumentException('trust_server_certificate must be true or false');
+        }
+
         unset($options[PDO::ATTR_EMULATE_PREPARES]);
 
-        $dsn = "sqlsrv:Server={$c['host']},{$c['port']};Database={$c['database']};Encrypt=yes;TrustServerCertificate=no";
+        $dsn = "sqlsrv:Server={$c['host']},{$c['port']};Database={$c['database']};Encrypt=yes;TrustServerCertificate=" . ($trust ? 'yes' : 'no');
 
         return new PDO($dsn, $c['username'], $c['password'], $options);
     }

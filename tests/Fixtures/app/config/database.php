@@ -27,5 +27,15 @@ return [
             'password' => (string) env('DB_PASSWORD', ''),
             'charset'  => 'utf8mb4',
         ],
+
+        'sqlsrv' => [
+            'driver'   => 'sqlsrv',
+            'host'     => (string) env('DB_HOST', '127.0.0.1'),
+            'port'     => (int) env('DB_PORT', 1433),
+            'database' => (string) env('DB_DATABASE', 'whitesmoke_test'),
+            'username' => (string) env('DB_USERNAME', ''),
+            'password' => (string) env('DB_PASSWORD', ''),
+            'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', false),
+        ],
     ],
 ];
