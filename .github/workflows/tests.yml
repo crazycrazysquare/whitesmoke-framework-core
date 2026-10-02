@@ -116,6 +116,47 @@ jobs:
       - run: composer update --no-interaction --no-progress --prefer-dist
       - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices
 
+  sqlsrv:
+    name: PHP ${{ matrix.php }} · sqlserver:2022
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4', '8.5']
+    services:
+      db:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: WsCi2026Pass
+        ports: ['1433:1433']
+        options: >-
+          --health-cmd="/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P WsCi2026Pass -Q 'SELECT 1' -b -o /dev/null"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      DB_CONNECTION: sqlsrv
+      DB_HOST: 127.0.0.1
+      DB_PORT: 1433
+      DB_DATABASE: whitesmoke_test
+      DB_USERNAME: sa
+      DB_PASSWORD: WsCi2026Pass
+      DB_TRUST_SERVER_CERTIFICATE: 'true'   # the container's certificate is self-signed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_sqlsrv, pdo_sqlite, mbstring, fileinfo
+          ini-values: error_reporting=-1
+          coverage: none
+      - name: Create the test database
+        run: docker exec ${{ job.services.db.id }} /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P WsCi2026Pass -b -Q "CREATE DATABASE whitesmoke_test"
+      - run: composer update --no-interaction --no-progress --prefer-dist
+      - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices
+
   phpunit:
     name: PHPUnit ${{ matrix.phpunit }} · PHP 8.3 · SQLite
     runs-on: ubuntu-latest
