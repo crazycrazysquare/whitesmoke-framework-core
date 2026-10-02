@@ -118,3 +118,29 @@ function uploads(): Whitesmoke\Storage\Uploads
 
     return $uploads ??= new Whitesmoke\Storage\Uploads(BASE_PATH . '/storage/uploads');
 }
+
+/** The cache from config/cache.php: files in storage/cache/data unless configured otherwise. */
+function cache(): Whitesmoke\Cache\Cache
+{
+    static $cache = null;
+
+    if ($cache === null) {
+        $file   = BASE_PATH . '/config/cache.php';
+        $config = (is_file($file) ? require $file : []) + [
+            'driver' => 'file',
+            'path'   => BASE_PATH . '/storage/cache/data',
+            'table'  => 'cache',
+            'prefix' => '',
+        ];
+
+        $store = match ($config['driver']) {
+            'file'     => new Whitesmoke\Cache\FileStore((string) $config['path']),
+            'database' => new Whitesmoke\Cache\DatabaseStore((string) $config['table'], $config['connection'] ?? null),
+            default    => throw new InvalidArgumentException('Cache driver must be file or database (CACHE_DRIVER)'),
+        };
+
+        $cache = new Whitesmoke\Cache\Cache($store, (string) $config['prefix']);
+    }
+
+    return $cache;
+}

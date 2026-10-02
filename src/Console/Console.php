@@ -35,6 +35,7 @@ final class Console
             Commands\MigrateStatusCommand::class,
             Commands\EnvCacheCommand::class,
             Commands\EnvClearCommand::class,
+            Commands\CacheClearCommand::class,
         ];
 
         $file = BASE_PATH . '/config/commands.php';
