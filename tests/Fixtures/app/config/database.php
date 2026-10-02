@@ -5,7 +5,9 @@ return [
     'default' => env('DB_CONNECTION', 'sqlite'),
 
     'connections' => [
-        'sqlite' => ['driver' => 'sqlite', 'database' => ':memory:'],
+        // In memory by default; DB_DATABASE=/path/to/file.sqlite tests a file, which
+        // several processes can share (needed by ThrottleRaceTest).
+        'sqlite' => ['driver' => 'sqlite', 'database' => (string) env('DB_DATABASE', ':memory:')],
 
         'pgsql' => [
             'driver'   => 'pgsql',

@@ -19,8 +19,8 @@ final class ThrottleRaceTest extends DatabaseTestCase
 
     public function testSimultaneousAttemptsCannotPassTheLimit(): void
     {
-        if ($this->schema()->driver() === 'sqlite') {
-            $this->markTestSkipped('The test database is in-memory SQLite, which other processes cannot share.');
+        if ($this->schema()->driver() === 'sqlite' && env('DB_DATABASE', ':memory:') === ':memory:') {
+            $this->markTestSkipped('In-memory SQLite cannot be shared between processes; set DB_DATABASE to a file.');
         }
 
         $this->schema()->create('throttle', function (Blueprint $t): void {

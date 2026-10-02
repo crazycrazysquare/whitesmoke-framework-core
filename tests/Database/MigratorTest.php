@@ -64,11 +64,26 @@ PHP);
         );
         $this->assertSame([], $this->migrator()->migrate(), 'nothing left to run');
 
+        // down() is the documented way to drop a column on each database.
+        $down = <<<'PHP'
+            if ($schema->driver() === 'sqlite' && version_compare((string) db()->query('SELECT sqlite_version()')->fetchColumn(), '3.35.0', '<')) {
+                // SQLite before 3.35 cannot drop a column: rebuild the table without it.
+                $schema->create('m_items_new', function (Blueprint $t): void { $t->id(); $t->string('name', 50); });
+                $schema->raw('INSERT INTO m_items_new (id, name) SELECT id, name FROM m_items');
+                $schema->drop('m_items');
+                $schema->raw('ALTER TABLE m_items_new RENAME TO m_items');
+                return;
+            }
+            if ($schema->driver() === 'sqlsrv') {
+                $schema->raw('ALTER TABLE [m_items] DROP CONSTRAINT [df_m_items_qty]');
+            }
+            $schema->raw('ALTER TABLE ' . match ($schema->driver()) { 'mysql' => '`m_items`', 'sqlsrv' => '[m_items]', default => '"m_items"' } . ' DROP COLUMN qty');
+            PHP;
+
         $this->migration(
             '2026_01_03_000000_add_qty_to_items_table',
             "\$schema->table('m_items', fn (Blueprint \$t) => \$t->integer('qty')->default(0));",
-            "if (\$schema->driver() === 'sqlsrv') { \$schema->raw('ALTER TABLE [m_items] DROP CONSTRAINT [df_m_items_qty]'); }"
-            . " \$schema->raw('ALTER TABLE ' . match (\$schema->driver()) { 'mysql' => '`m_items`', 'sqlsrv' => '[m_items]', default => '\"m_items\"' } . ' DROP COLUMN qty');"
+            $down
         );
         $this->migrator()->migrate();
 
