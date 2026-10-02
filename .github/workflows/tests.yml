@@ -37,7 +37,10 @@ jobs:
           ini-values: error_reporting=-1
           coverage: none
       - run: composer update --no-interaction --no-progress --prefer-dist
-      - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices
+      - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices --log-junit build/junit.xml
+      - name: Show failing tests as annotations
+        if: failure()
+        run: php .github/junit-annotations.php build/junit.xml
 
   mysql:
     name: PHP ${{ matrix.php }} · ${{ matrix.db }}
@@ -76,7 +79,10 @@ jobs:
           ini-values: error_reporting=-1
           coverage: none
       - run: composer update --no-interaction --no-progress --prefer-dist
-      - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices
+      - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices --log-junit build/junit.xml
+      - name: Show failing tests as annotations
+        if: failure()
+        run: php .github/junit-annotations.php build/junit.xml
 
   pgsql:
     name: PHP ${{ matrix.php }} · postgres:17
@@ -114,7 +120,10 @@ jobs:
           ini-values: error_reporting=-1
           coverage: none
       - run: composer update --no-interaction --no-progress --prefer-dist
-      - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices
+      - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices --log-junit build/junit.xml
+      - name: Show failing tests as annotations
+        if: failure()
+        run: php .github/junit-annotations.php build/junit.xml
 
   sqlsrv:
     name: PHP ${{ matrix.php }} · sqlserver:2022
@@ -155,7 +164,10 @@ jobs:
       - name: Create the test database
         run: docker exec ${{ job.services.db.id }} /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P WsCi2026Pass -b -Q "CREATE DATABASE whitesmoke_test"
       - run: composer update --no-interaction --no-progress --prefer-dist
-      - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices
+      - run: composer test -- --fail-on-deprecation --fail-on-warning --fail-on-notice --fail-on-risky --display-deprecations --display-warnings --display-notices --log-junit build/junit.xml
+      - name: Show failing tests as annotations
+        if: failure()
+        run: php .github/junit-annotations.php build/junit.xml
 
   phpunit:
     name: PHPUnit ${{ matrix.phpunit }} · PHP 8.3 · SQLite
@@ -177,4 +189,7 @@ jobs:
           coverage: none
       - run: composer require --dev --no-update "phpunit/phpunit:${{ matrix.phpunit }}"
       - run: composer update --no-interaction --no-progress --prefer-dist
-      - run: composer test
+      - run: composer test -- --log-junit build/junit.xml
+      - name: Show failing tests as annotations
+        if: failure()
+        run: php .github/junit-annotations.php build/junit.xml
