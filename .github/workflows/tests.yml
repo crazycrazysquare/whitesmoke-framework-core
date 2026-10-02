@@ -161,6 +161,17 @@ jobs:
           extensions: pdo_sqlsrv, pdo_sqlite, mbstring, fileinfo
           ini-values: error_reporting=-1
           coverage: none
+      # pdo_sqlsrv needs Microsoft's ODBC driver, which the runner image no longer ships.
+      - name: Install ODBC Driver 18 for SQL Server
+        run: |
+          . /etc/os-release
+          sudo apt-get update -qq
+          if ! apt-cache show msodbcsql18 > /dev/null 2>&1; then
+            curl -fsSL -o /tmp/packages-microsoft-prod.deb "https://packages.microsoft.com/config/ubuntu/${VERSION_ID}/packages-microsoft-prod.deb"
+            sudo dpkg -i /tmp/packages-microsoft-prod.deb
+            sudo apt-get update -qq
+          fi
+          sudo ACCEPT_EULA=Y apt-get install -y -qq msodbcsql18
       - name: Create the test database
         run: docker exec ${{ job.services.db.id }} /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P WsCi2026Pass -b -Q "CREATE DATABASE whitesmoke_test"
       - run: composer update --no-interaction --no-progress --prefer-dist
