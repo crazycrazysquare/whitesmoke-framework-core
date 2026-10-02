@@ -6,17 +6,21 @@ declare(strict_types=1);
  * Serves real files inside public/ (CSS, JS, images) and sends every other
  * request to public/index.php. Never serves PHP files, dotfiles or anything
  * outside public/.
+ *
+ * Dotfiles are checked on the resolved path too, because Windows reaches the
+ * same file through other names: "\.env" and 8.3 short names like "ENV~1".
  */
 
 $root = realpath((string) $_SERVER['DOCUMENT_ROOT']);
 $path = rawurldecode((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH));
 
-if ($root !== false && $path !== '/' && !str_contains($path, "\0") && !preg_match('~(^|/)\.~', $path)) {
+if ($root !== false && $path !== '/' && !str_contains($path, "\0") && !preg_match('~(^|[/\\\\])\.~', $path)) {
     $file = realpath($root . $path);
 
     if ($file !== false
         && is_file($file)
         && str_starts_with($file, $root . DIRECTORY_SEPARATOR)
+        && !preg_match('~[/\\\\]\.~', substr($file, strlen($root)))
         && strtolower(pathinfo($file, PATHINFO_EXTENSION)) !== 'php') {
         return false;
     }
