@@ -91,7 +91,7 @@ final class ConsoleTest extends TestCase
         $this->assertFileExists($controller);
         $this->assertFileExists($view);
         $this->assertStringContainsString("view()->render('monthly_report/index'", (string) file_get_contents($controller));
-        exec('php -l ' . escapeshellarg($controller) . ' 2>&1', $lint, $code);
+        exec(escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($controller) . ' 2>&1', $lint, $code);
         $this->assertSame(0, $code, 'generated controller is valid PHP');
 
         $this->assertSame(1, $this->smoke('make:controller', 'MonthlyReport'), 'must not overwrite');
