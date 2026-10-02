@@ -18,7 +18,7 @@ final class View
 
     private function load(string $view, array $data): string
     {
-        if (!preg_match('~^[a-z0-9_]+(?:/[a-z0-9_]+)*$~', $view)) {
+        if (!preg_match('~^[a-z0-9_]+(?:/[a-z0-9_]+)*\z~', $view)) {
             throw new \InvalidArgumentException('Invalid view name');
         }
 

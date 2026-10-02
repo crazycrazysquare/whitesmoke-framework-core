@@ -62,10 +62,10 @@ final class Message
     private static function encodeHeader(string $text, bool $phrase = false): string
     {
         if (!str_contains($text, '=?')) {
-            if ($phrase && preg_match("~^[A-Za-z0-9 !#$%&'*+/=?^_`{|}\~-]{1,60}$~", $text)) {
+            if ($phrase && preg_match("~^[A-Za-z0-9 !#$%&'*+/=?^_`{|}\~-]{1,60}\z~", $text)) {
                 return $text;
             }
-            if (preg_match('~^[\x20-\x7E]{0,60}$~', $text)) {
+            if (preg_match('~^[\x20-\x7E]{0,60}\z~', $text)) {
                 return $phrase ? '"' . addcslashes($text, '"\\') . '"' : $text;
             }
         }

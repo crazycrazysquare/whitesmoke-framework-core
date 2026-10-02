@@ -29,7 +29,7 @@ final class SmtpTransport
         private readonly int $timeout = 10,
         private readonly string $ehlo = 'localhost',
     ) {
-        if (!preg_match('~^[A-Za-z0-9.-]+$|^\[?[0-9A-Fa-f:.]+\]?$~', $host)) {
+        if (!preg_match('~^(?:[A-Za-z0-9.-]+|\[?[0-9A-Fa-f:.]+\]?)\z~', $host)) {
             throw new InvalidArgumentException('Invalid SMTP host');
         }
         if ($port < 1 || $port > 65535) {
@@ -44,7 +44,7 @@ final class SmtpTransport
         if ($timeout < 1) {
             throw new InvalidArgumentException('Invalid SMTP timeout');
         }
-        if (!preg_match('~^[A-Za-z0-9.-]{1,253}$~', $ehlo)) {
+        if (!preg_match('~^[A-Za-z0-9.-]{1,253}\z~', $ehlo)) {
             throw new InvalidArgumentException('Invalid EHLO name');
         }
         if (preg_match('~[\r\n\0]~', $username . $password)) {

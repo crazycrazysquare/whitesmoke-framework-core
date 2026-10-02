@@ -111,7 +111,7 @@ final class Console
     {
         $name = $command->name();
 
-        if (!preg_match('~^[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?$~', $name)) {
+        if (!preg_match('~^[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?\z~', $name)) {
             throw new InvalidArgumentException("Invalid command name: {$name}");
         }
 

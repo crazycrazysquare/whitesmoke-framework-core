@@ -176,9 +176,9 @@ final class Request
     /** One X-Forwarded-For entry as a normalized IP, or null if it is not one. Ports are dropped. */
     private static function forwardedIp(string $entry): ?string
     {
-        if (preg_match('~^\[([0-9a-fA-F:.]+)\](?::\d{1,5})?$~', $entry, $m)) {
+        if (preg_match('~^\[([0-9a-fA-F:.]+)\](?::\d{1,5})?\z~', $entry, $m)) {
             $entry = $m[1];
-        } elseif (preg_match('~^(\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}$~', $entry, $m)) {
+        } elseif (preg_match('~^(\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}\z~', $entry, $m)) {
             $entry = $m[1];
         }
 

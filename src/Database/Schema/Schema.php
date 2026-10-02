@@ -219,7 +219,7 @@ final class Schema
 
     private function quote(string $identifier): string
     {
-        if (!preg_match('~^[A-Za-z_][A-Za-z0-9_]*$~', $identifier)) {
+        if (!preg_match('~^[A-Za-z_][A-Za-z0-9_]*\z~', $identifier)) {
             throw new InvalidArgumentException("Invalid identifier: {$identifier}");
         }
 

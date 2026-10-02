@@ -21,7 +21,7 @@ final class SessionUser
 
     public function __construct(private readonly ?Session $session = null, private readonly string $table = 'users')
     {
-        if (!preg_match('~^[a-z_][a-z0-9_]*$~', $table)) {
+        if (!preg_match('~^[a-z_][a-z0-9_]*\z~', $table)) {
             throw new InvalidArgumentException("Invalid users table name: {$table}");
         }
     }

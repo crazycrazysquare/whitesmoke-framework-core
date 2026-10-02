@@ -44,7 +44,7 @@ final class Connection
     {
         self::guard($c['host'], $c['database'], $c['sslmode']);
 
-        if (!preg_match('~^[a-z_][a-z0-9_]*$~i', $c['schema'])) {
+        if (!preg_match('~^[a-z_][a-z0-9_]*\z~i', $c['schema'])) {
             throw new InvalidArgumentException('Invalid schema name');
         }
 

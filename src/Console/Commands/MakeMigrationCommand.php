@@ -28,7 +28,7 @@ final class MakeMigrationCommand implements Command
     {
         $name = $input->argument(0);
 
-        if ($name === null || !preg_match('~^[a-z][a-z0-9_]*$~', $name)) {
+        if ($name === null || !preg_match('~^[a-z][a-z0-9_]*\z~', $name)) {
             $output->error('Name must be snake_case, e.g. create_reports_table.');
             return 1;
         }
@@ -44,10 +44,10 @@ final class MakeMigrationCommand implements Command
             return 1;
         }
 
-        if (preg_match('~^create_([a-z0-9_]+)_table$~', $name, $m)) {
+        if (preg_match('~^create_([a-z0-9_]+)_table\z~', $name, $m)) {
             $up   = "        \$schema->create('{$m[1]}', function (Blueprint \$table): void {\n            \$table->id();\n            \$table->timestamps();\n        });";
             $down = "        \$schema->dropIfExists('{$m[1]}');";
-        } elseif (preg_match('~_to_([a-z0-9_]+)_table$~', $name, $m)) {
+        } elseif (preg_match('~_to_([a-z0-9_]+)_table\z~', $name, $m)) {
             $up   = "        \$schema->table('{$m[1]}', function (Blueprint \$table): void {\n            // \$table->string('column')->nullable();\n        });";
             $down = "        // Dropping columns differs by database; use \$schema->raw('ALTER TABLE ...') if needed.";
         } else {

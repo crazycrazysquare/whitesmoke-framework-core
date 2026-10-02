@@ -19,7 +19,7 @@ final class PasswordResets
         if ($lifetime < 60 || $lifetime > 86400) {
             throw new InvalidArgumentException('Reset token lifetime must be between 60 seconds and 24 hours');
         }
-        if (!preg_match('~^[a-z_][a-z0-9_]*$~', $table)) {
+        if (!preg_match('~^[a-z_][a-z0-9_]*\z~', $table)) {
             throw new InvalidArgumentException("Invalid password reset table name: {$table}");
         }
     }
@@ -46,7 +46,7 @@ final class PasswordResets
     /** The user id for a valid token, without using it up (to show the form). */
     public function check(string $token): ?int
     {
-        if (!preg_match('~^[0-9a-f]{64}$~', $token)) {
+        if (!preg_match('~^[0-9a-f]{64}\z~', $token)) {
             return null;
         }
 

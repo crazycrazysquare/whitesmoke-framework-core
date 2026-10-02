@@ -17,7 +17,7 @@ final class Throttle
 {
     public function __construct(private readonly string $table = 'throttle')
     {
-        if (!preg_match('~^[a-z_][a-z0-9_]*$~', $table)) {
+        if (!preg_match('~^[a-z_][a-z0-9_]*\z~', $table)) {
             throw new InvalidArgumentException("Invalid throttle table name: {$table}");
         }
     }

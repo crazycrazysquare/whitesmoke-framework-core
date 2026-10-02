@@ -19,7 +19,7 @@ final class Generator
             return null;
         }
 
-        if (!preg_match('~^[A-Z][A-Za-z0-9]*$~', $name)) {
+        if (!preg_match('~^[A-Z][A-Za-z0-9]*\z~', $name)) {
             $output->error('Name must start with a capital letter and use only letters and digits, e.g. Report.');
             return null;
         }

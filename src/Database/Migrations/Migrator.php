@@ -14,7 +14,7 @@ use Whitesmoke\Database\Schema\Schema;
 final class Migrator
 {
     private const TABLE = 'migrations';
-    private const NAME  = '~^\d{4}_\d{2}_\d{2}_\d{6}_[a-z0-9_]+$~';
+    private const NAME  = '~^\d{4}_\d{2}_\d{2}_\d{6}_[a-z0-9_]+\z~';
 
     private Schema $schema;
 
