@@ -107,6 +107,24 @@ final class SessionUserTest extends DatabaseTestCase
         $this->assertNotNull($this->check($this->login()), 'logging in again with the new password works');
     }
 
+    public function testRememberingAgainKeepsThisSessionAfterAPasswordChange(): void
+    {
+        $other = $this->login();
+        $here  = $this->login();
+
+        table('su_users')->where('id', '=', $this->ana)->update(['password' => password_hash('new-password-1', PASSWORD_DEFAULT)]);
+
+        // What "change password" does on the device where it happened:
+        $session = $this->request($here);
+        (new SessionUser($session, 'su_users'))->remember(table('su_users')->where('id', '=', $this->ana)->first());
+        $kept = session_id();
+        $this->closeSession();
+
+        $this->assertNotSame($here, $kept, 'new session id');
+        $this->assertNotNull($this->check($kept), 'this device stays logged in');
+        $this->assertNull($this->check($other), 'the other device is logged out');
+    }
+
     public function testEndedSessionIsEmptied(): void
     {
         $cookie = $this->login();
