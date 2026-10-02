@@ -15,7 +15,7 @@ use Whitesmoke\Routing\Router;
 
 final class Application
 {
-    public const VERSION = '0.2.5';
+    public const VERSION = '0.2.6';
 
     public function __construct(string $basePath)
     {
