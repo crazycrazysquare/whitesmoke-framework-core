@@ -111,6 +111,30 @@ final class Query
         return $query->run($query->selectSql(), $query->bindings)->fetch() ?: null;
     }
 
+    /**
+     * One page of rows plus the total. $page is usually $request->getInt('page'):
+     * null or below 1 gives page 1, past the end gives the last page. Needs orderBy(),
+     * because without a fixed order rows can repeat or go missing between pages.
+     */
+    public function paginate(int $perPage, ?int $page = null): Page
+    {
+        if ($perPage < 1 || $perPage > 1000) {
+            throw new InvalidArgumentException('Rows per page must be between 1 and 1000');
+        }
+        if ($this->orders === []) {
+            throw new LogicException('paginate() needs orderBy(), so pages keep a fixed order');
+        }
+        if ($this->limit !== null || $this->offset !== null) {
+            throw new LogicException('paginate() sets limit and offset itself');
+        }
+
+        $total = $this->count();
+        $page  = min(max(1, $page ?? 1), max(1, (int) ceil($total / $perPage)));
+        $items = $total === 0 ? [] : (clone $this)->limit($perPage)->offset(($page - 1) * $perPage)->get();
+
+        return new Page($items, $total, $page, $perPage);
+    }
+
     public function count(): int
     {
         $sql = 'SELECT COUNT(*) FROM ' . $this->quote($this->table) . $this->whereSql();
@@ -220,7 +244,7 @@ final class Query
             return '*';
         }
 
-        if (!preg_match('~^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?$~', $identifier)) {
+        if (!preg_match('~^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\z~', $identifier)) {
             throw new InvalidArgumentException("Invalid identifier: {$identifier}");
         }
 
