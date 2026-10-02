@@ -67,6 +67,24 @@ function logger(): Whitesmoke\Log\Logger
     return $logger;
 }
 
+/** The mailer from config/mail.php, created on first use. */
+function mailer(): Whitesmoke\Mail\Mailer
+{
+    static $mailer = null;
+
+    if ($mailer === null) {
+        $file = BASE_PATH . '/config/mail.php';
+
+        if (!is_file($file)) {
+            throw new RuntimeException('config/mail.php is missing; mail is not configured');
+        }
+
+        $mailer = new Whitesmoke\Mail\Mailer(require $file);
+    }
+
+    return $mailer;
+}
+
 /**
  * Read an environment variable. Unset or blank values return $default.
  * "true", "false", "null" and "empty" (with or without parentheses)

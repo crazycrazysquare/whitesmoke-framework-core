@@ -37,6 +37,13 @@ final class Application
 
         session()->close();
         $response->send();
+
+        // Under PHP-FPM, end the request here so the visitor has the full response
+        // while work registered with register_shutdown_function() (like sending
+        // email) still runs. Elsewhere that work runs before the request ends.
+        if (\function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        }
     }
 
     /** Capture the request and build its response, error pages included. run() sends it. */
