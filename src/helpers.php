@@ -136,7 +136,16 @@ function cache(): Whitesmoke\Cache\Cache
         $store = match ($config['driver']) {
             'file'     => new Whitesmoke\Cache\FileStore((string) $config['path']),
             'database' => new Whitesmoke\Cache\DatabaseStore((string) $config['table'], $config['connection'] ?? null),
-            default    => throw new InvalidArgumentException('Cache driver must be file or database (CACHE_DRIVER)'),
+            'redis'    => new Whitesmoke\Cache\RedisStore(
+                (string) ($config['redis']['host'] ?? '127.0.0.1'),
+                (int) ($config['redis']['port'] ?? 6379),
+                (string) ($config['redis']['encryption'] ?? 'none'),
+                (string) ($config['redis']['password'] ?? ''),
+                (string) ($config['redis']['username'] ?? ''),
+                (int) ($config['redis']['database'] ?? 0),
+                (int) ($config['redis']['timeout'] ?? 5),
+            ),
+            default    => throw new InvalidArgumentException('Cache driver must be file, database or redis (CACHE_DRIVER)'),
         };
 
         $cache = new Whitesmoke\Cache\Cache($store, (string) $config['prefix']);
