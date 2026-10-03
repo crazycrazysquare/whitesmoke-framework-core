@@ -3,11 +3,16 @@ declare(strict_types=1);
 
 namespace Whitesmoke\Middleware;
 
+use Whitesmoke\Http\Forbidden;
 use Whitesmoke\Http\Request;
 use Whitesmoke\Http\Response;
 
 final class Csrf
 {
+    /**
+     * Refuses a POST without the session's token with a 403, rendered by Application
+     * like every error page (errors/403.php, or plain text when the view is missing).
+     */
     public function handle(Request $request): ?Response
     {
         if ($request->method() !== 'POST') {
@@ -17,7 +22,7 @@ final class Csrf
         $token = $request->post('_token');
 
         if ($token === null || !hash_equals(session()->token(), $token)) {
-            return Response::html(view()->render('errors/403', ['title' => 'Expired'], 'layouts/app'), 403);
+            throw new Forbidden();
         }
 
         return null;

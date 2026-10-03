@@ -6,6 +6,7 @@ namespace Whitesmoke\Tests\Integration;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Whitesmoke\Foundation\Application;
+use Whitesmoke\Http\Forbidden;
 use Whitesmoke\Http\MethodNotAllowed;
 use Whitesmoke\Http\NotFound;
 use Whitesmoke\Http\Request;
@@ -114,12 +115,33 @@ final class ApplicationTest extends TestCase
         $token = session()->token();
 
         $this->assertNull($csrf->handle($this->request('GET', '/form')), 'GET is not checked');
-        $this->assertSame(403, $csrf->handle($this->request('POST', '/form'))?->status(), 'missing token');
-        $this->assertSame(403, $csrf->handle($this->request('POST', '/form', ['_token' => 'forged']))?->status(), 'wrong token');
-        $this->assertSame(403, $csrf->handle($this->request('POST', '/form', ['_token' => ['x']]))?->status(), 'array token');
+
+        foreach (['missing token' => [], 'wrong token' => ['_token' => 'forged'], 'array token' => ['_token' => ['x']]] as $case => $post) {
+            try {
+                $csrf->handle($this->request('POST', '/form', $post));
+                $this->fail("{$case} must be refused");
+            } catch (Forbidden $e) {
+                $this->assertSame(403, $e->status(), $case);
+            }
+        }
+
         $this->assertNull($csrf->handle($this->request('POST', '/form', ['_token' => $token])), 'valid token');
 
         session()->close();
+    }
+
+    public function testCsrfRefusalIsA403PageThroughTheApplication(): void
+    {
+        if (headers_sent()) {
+            $this->markTestSkipped('Run PHPUnit with --stderr (composer test).');
+        }
+
+        $this->request('POST', '/form', ['_token' => 'forged']);
+        $response = (new Application(BASE_PATH))->respond();
+        session()->close();
+
+        $this->assertSame(403, $response->status());
+        $this->assertStringContainsString('<h1>403</h1>', $response->body(), 'the app\'s errors/403 view');
     }
 
     /** respond() for GET / from $remote with the given TRUSTED_PROXIES and X-Forwarded-Proto. */
