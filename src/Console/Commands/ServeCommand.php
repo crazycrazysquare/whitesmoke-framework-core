@@ -51,14 +51,20 @@ final class ServeCommand implements Command
             $output->error('with insecure session cookies and possibly debug output. Never use it with real data.');
         }
 
-        $command = implode(' ', array_map('escapeshellarg', [
-            PHP_BINARY, '-S', $address,
-            '-t', BASE_PATH . '/public',
-            dirname(__DIR__) . '/server.php',
-        ]));
+        // An argument list, not a shell command: paths reach PHP unchanged. (On Windows,
+        // escapeshellarg() turns %, ! and " into spaces, which broke project paths
+        // such as "C:\dev\100% done".) The server shares this console's input and output.
+        $server = proc_open(
+            [PHP_BINARY, '-S', $address, '-t', BASE_PATH . '/public', dirname(__DIR__) . '/server.php'],
+            [0 => STDIN, 1 => STDOUT, 2 => STDERR],
+            $pipes
+        );
 
-        passthru($command, $code);
+        if (!is_resource($server)) {
+            $output->error('Could not start the PHP development server.');
+            return 1;
+        }
 
-        return $code;
+        return proc_close($server);
     }
 }
