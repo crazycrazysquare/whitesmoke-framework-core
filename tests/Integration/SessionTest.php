@@ -161,4 +161,58 @@ final class SessionTest extends TestCase
         $this->assertSame($token, $this->request(session_id())->token());
         $this->assertNotSame($token, $this->request()->token(), 'different sessions get different tokens');
     }
+
+    public function testCookieName(): void
+    {
+        $this->assertSame('__Host-ws_test', (new Session(['secure' => true] + $this->config))->cookieName());
+        $this->assertSame('ws_test', (new Session(['secure' => false] + $this->config))->cookieName());
+
+        unset($this->config['secure']);
+        $this->assertSame('__Host-ws_test', (new Session($this->config))->cookieName(), 'secure unless switched off');
+        $this->assertSame('__Host-my-app_2', (new Session(['name' => 'my-app_2'] + $this->config))->cookieName());
+
+        foreach (['', '__Host-ws', '__Secure-ws', '_ws', '123', 'ws session', 'ws;x', 'ws=x', "ws\n", 'wś', str_repeat('a', 65), ['ws'], null] as $bad) {
+            try {
+                new Session(['name' => $bad] + $this->config);
+                $this->fail('Should refuse ' . json_encode($bad));
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function testSecureSessionUsesTheHostPrefixedCookie(): void
+    {
+        $this->config['secure'] = true;
+        $domain = ini_get('session.cookie_domain');
+        ini_set('session.cookie_domain', 'example.test');
+
+        try {
+            $s = $this->request();
+            $s->put('cart', 'kept');
+            $id = session_id();
+
+            $params = session_get_cookie_params();
+            $this->assertSame('__Host-ws_test', session_name());
+            $this->assertTrue($params['secure']);
+            $this->assertTrue($params['httponly']);
+            $this->assertSame('/', $params['path']);
+            $this->assertSame('', $params['domain'], 'a domain from php.ini would make browsers drop a __Host- cookie');
+
+            // A cookie under the plain name, as a sibling subdomain or plain HTTP page could set, is not read.
+            $this->closeSession();
+            $_COOKIE['ws_test'] = $id;
+            $this->assertNull((new Session($this->config))->get('cart'));
+
+            $this->closeSession();
+            unset($_COOKIE['ws_test']);
+            $_COOKIE['__Host-ws_test'] = $id;
+            session_id($id);
+            $this->assertSame('kept', (new Session($this->config))->get('cart'));
+        } finally {
+            $this->closeSession();
+            unset($_COOKIE['ws_test'], $_COOKIE['__Host-ws_test']);
+            ini_set('session.cookie_domain', (string) $domain);
+        }
+    }
 }
