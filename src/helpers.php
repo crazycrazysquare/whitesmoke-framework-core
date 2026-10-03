@@ -34,6 +34,34 @@ function table(string $table, ?string $connection = null): Whitesmoke\Database\Q
     return new Whitesmoke\Database\Query(db($connection), $table);
 }
 
+/**
+ * Run $work in a database transaction: committed when it returns, rolled back when it
+ * throws (the exception is rethrown). Returns what $work returns; $work receives the PDO.
+ * A transaction inside a transaction throws, because the inner one could not roll back alone.
+ */
+function transaction(Closure $work, ?string $connection = null): mixed
+{
+    $pdo = db($connection);
+
+    if ($pdo->inTransaction()) {
+        throw new LogicException('A transaction is already open on this connection; nested transactions are not supported');
+    }
+
+    $pdo->beginTransaction();
+
+    try {
+        $result = $work($pdo);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    return $result;
+}
+
 function session(): Whitesmoke\Session\Session
 {
     static $session = null;
