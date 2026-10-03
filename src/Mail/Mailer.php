@@ -38,7 +38,7 @@ final class Mailer
         $data = $message->render($this->from, $this->fromName);
 
         if ($this->driver === 'log') {
-            $this->log($data);
+            $this->log($data, $message->recipients());
             return;
         }
 
@@ -50,10 +50,11 @@ final class Mailer
             (string) ($this->config['password'] ?? ''),
             (int) ($this->config['timeout'] ?? 10),
             (string) ($this->config['ehlo'] ?? 'localhost'),
-        ))->send($this->from, $message->to, $data);
+        ))->send($this->from, $message->recipients(), $data);
     }
 
-    private function log(string $data): void
+    /** @param list<string> $recipients every address, Bcc included (they are not in the headers) */
+    private function log(string $data, array $recipients): void
     {
         $dir = (string) ($this->config['log_path'] ?? BASE_PATH . '/storage/logs');
 
@@ -64,7 +65,7 @@ final class Mailer
         $file = $dir . '/mail-' . date('Y-m-d') . '.log';
         $new  = !is_file($file);
 
-        file_put_contents($file, "===== " . date('Y-m-d H:i:s') . " =====\r\n" . $data . "\r\n\r\n", FILE_APPEND | LOCK_EX);
+        file_put_contents($file, "===== " . date('Y-m-d H:i:s') . " =====\r\nEnvelope recipients: " . implode(', ', $recipients) . "\r\n\r\n" . $data . "\r\n\r\n", FILE_APPEND | LOCK_EX);
 
         if ($new) {
             @chmod($file, 0640);

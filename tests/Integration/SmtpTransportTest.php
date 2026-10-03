@@ -221,6 +221,35 @@ final class SmtpTransportTest extends TestCase
         $this->assertContains('Open the link.', $lines);
     }
 
+    public function testSendsToEveryRecipientIncludingBcc(): void
+    {
+        $this->startServer('plain');
+
+        $message = new Message(['ana@example.test', 'ben@example.test'], 'Team', 'Hi', cc: ['cleo@example.test'], bcc: ['boss@example.test']);
+        (new Mailer(['driver' => 'smtp', 'host' => '127.0.0.1', 'port' => $this->port, 'encryption' => 'none', 'from_address' => 'app@example.test']))->send($message);
+
+        $lines = $this->received();
+        $this->assertSame(
+            ['RCPT TO:<ana@example.test>', 'RCPT TO:<ben@example.test>', 'RCPT TO:<cleo@example.test>', 'RCPT TO:<boss@example.test>'],
+            array_values(preg_grep('~^RCPT TO:~', $lines))
+        );
+        $this->assertEmpty(preg_grep('~boss@~', array_slice($lines, (int) array_search('DATA', $lines, true))), 'Bcc is not in the message itself');
+    }
+
+    public function testOneRefusedRecipientMeansNothingIsSent(): void
+    {
+        $this->startServer('plain');
+
+        try {
+            $this->transport()->send('app@example.test', ['ana@example.test', 'reject@example.test', 'ben@example.test'], $this->message());
+            $this->fail('A refused recipient must stop the message');
+        } catch (MailException $e) {
+            $this->assertStringContainsString('550', $e->getMessage());
+        }
+
+        $this->assertNotContains('DATA', $this->received(), 'the message was never sent');
+    }
+
     public function testMailerSendsHtmlWithTextAlternative(): void
     {
         $this->startServer('plain');

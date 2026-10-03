@@ -52,10 +52,17 @@ final class SmtpTransport
         }
     }
 
-    /** Send one rendered message (Message::render()). */
-    public function send(string $from, string $to, string $data): void
+    /**
+     * Send one rendered message (Message::render()) to one or more addresses. If the server
+     * refuses any recipient, nothing is sent.
+     *
+     * @param string|list<string> $to
+     */
+    public function send(string $from, string|array $to, string $data): void
     {
-        if (!Message::isAddress($from) || !Message::isAddress($to)) {
+        $to = is_array($to) ? array_values($to) : [$to];
+
+        if (!Message::isAddress($from) || $to === [] || count(array_filter($to, fn ($a): bool => !is_string($a) || !Message::isAddress($a))) > 0) {
             throw new InvalidArgumentException('Invalid sender or recipient address');
         }
 
@@ -81,7 +88,9 @@ final class SmtpTransport
             }
 
             $this->command("MAIL FROM:<{$from}>", [250]);
-            $this->command("RCPT TO:<{$to}>", [250, 251]);
+            foreach ($to as $address) {
+                $this->command("RCPT TO:<{$address}>", [250, 251]);
+            }
             $this->command('DATA', [354]);
 
             $data = preg_replace('~\r?\n~', "\r\n", rtrim($data, "\r\n"));

@@ -6,20 +6,39 @@ namespace Whitesmoke\Mail;
 use InvalidArgumentException;
 
 /**
- * An email to one recipient: plain text, optionally with an HTML version. With HTML,
- * both are sent as multipart/alternative; mail programs show the HTML and fall back
- * to the text.
+ * An email: plain text, optionally with an HTML version (multipart/alternative; mail
+ * programs show the HTML and fall back to the text), to one or more recipients, with
+ * optional Cc, Bcc and attachments (multipart/mixed). Bcc addresses never appear in
+ * the headers; they only receive the message.
  */
 final class Message
 {
+    private const MAX_RECIPIENTS  = 100;
+    private const MAX_ATTACHMENTS = 20 * 1024 * 1024;
+
+    /**
+     * @param string|list<string> $to
+     * @param list<string>        $cc
+     * @param list<string>        $bcc
+     * @param list<Attachment>    $attachments
+     */
     public function __construct(
-        public readonly string $to,
+        public readonly string|array $to,
         public readonly string $subject,
         public readonly string $text,
         public readonly ?string $html = null,
+        public readonly array $cc = [],
+        public readonly array $bcc = [],
+        public readonly array $attachments = [],
     ) {
-        if (!self::isAddress($to)) {
-            throw new InvalidArgumentException('Invalid recipient address');
+        if (self::addresses($to) === []) {
+            throw new InvalidArgumentException('A message needs at least one recipient');
+        }
+        self::addresses($cc);
+        self::addresses($bcc);
+
+        if (count($this->recipients()) > self::MAX_RECIPIENTS) {
+            throw new InvalidArgumentException('A message can have at most ' . self::MAX_RECIPIENTS . ' recipients');
         }
 
         if (preg_match('~[\r\n\0]~', $subject) || !mb_check_encoding($subject . $text . $html, 'UTF-8')) {
@@ -29,6 +48,42 @@ final class Message
         if ($html !== null && (trim($html) === '' || str_contains($html, "\0"))) {
             throw new InvalidArgumentException('The HTML body must not be empty or contain null bytes');
         }
+
+        $size = 0;
+        foreach ($attachments as $attachment) {
+            if (!$attachment instanceof Attachment) {
+                throw new InvalidArgumentException('Attachments must be Attachment objects (Attachment::fromPath() or fromData())');
+            }
+            $size += strlen($attachment->data);
+        }
+        if ($size > self::MAX_ATTACHMENTS) {
+            throw new InvalidArgumentException('Attachments may total at most 20 MB');
+        }
+    }
+
+    /** Every address that receives the message: To, Cc and Bcc, each once. */
+    public function recipients(): array
+    {
+        $unique = [];
+        foreach ([...self::addresses($this->to), ...self::addresses($this->cc), ...self::addresses($this->bcc)] as $address) {
+            $unique[strtolower($address)] ??= $address;
+        }
+
+        return array_values($unique);
+    }
+
+    /** @return list<string> */
+    private static function addresses(string|array $value): array
+    {
+        $list = is_array($value) ? array_values($value) : [$value];
+
+        foreach ($list as $address) {
+            if (!is_string($address) || !self::isAddress($address)) {
+                throw new InvalidArgumentException('Invalid recipient address');
+            }
+        }
+
+        return $list;
     }
 
     /** A plain address (no display name) that is safe to put in a header or SMTP command. */
@@ -42,38 +97,63 @@ final class Message
     {
         $domain = substr((string) strrchr($from, '@'), 1);
 
+        $list = static fn (array $addresses): string => implode(",\r\n ", array_map(fn (string $a): string => "<{$a}>", $addresses));
+
         $headers = [
             'Date'         => date(DATE_RFC2822),
             'From'         => ($fromName === '' ? '' : self::encodeHeader($fromName, true) . ' ') . "<{$from}>",
-            'To'           => "<{$this->to}>",
+            'To'           => $list(self::addresses($this->to)),
+            'Cc'           => $list(self::addresses($this->cc)),
             'Subject'      => self::encodeHeader($this->subject),
             'Message-ID'   => '<' . bin2hex(random_bytes(16)) . "@{$domain}>",
             'MIME-Version' => '1.0',
         ];
-
-        $text = self::encodeBody($this->text);
-
-        if ($this->html === null) {
-            $headers['Content-Type'] = 'text/plain; charset=UTF-8';
-            $headers['Content-Transfer-Encoding'] = 'quoted-printable';
-
-            return self::head($headers) . "\r\n" . $text;
+        if ($this->cc === []) {
+            unset($headers['Cc']);
         }
 
-        $html = self::encodeBody($this->html);
+        $text  = self::encodeBody($this->text);
+        $html  = $this->html === null ? null : self::encodeBody($this->html);
+        $files = array_map(static fn (Attachment $a): string => $a->part(), $this->attachments);
+        $all   = $text . $html . implode('', $files);
 
+        // The body: plain text, or text and HTML as alternatives.
+        if ($html === null) {
+            $body    = ['Content-Type' => 'text/plain; charset=UTF-8', 'Content-Transfer-Encoding' => 'quoted-printable'];
+            $content = $text;
+        } else {
+            $alt     = self::boundary($all);
+            $part    = static fn (string $type, string $encoded): string => "--{$alt}\r\n"
+                . "Content-Type: {$type}; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n{$encoded}\r\n";
+            $body    = ['Content-Type' => "multipart/alternative; boundary=\"{$alt}\""];
+            $content = $part('text/plain', $text) . $part('text/html', $html) . "--{$alt}--\r\n";
+            $all    .= $alt;
+        }
+
+        if ($files === []) {
+            return self::head($headers + $body) . "\r\n" . $content;
+        }
+
+        // With attachments: the body first, then each file.
+        $mixed = self::boundary($all);
+        $headers['Content-Type'] = "multipart/mixed; boundary=\"{$mixed}\"";
+
+        $out = self::head($headers) . "\r\n--{$mixed}\r\n" . self::head($body) . "\r\n" . $content . "\r\n";
+        foreach ($files as $file) {
+            $out .= "--{$mixed}\r\n" . $file;
+        }
+
+        return $out . "--{$mixed}--\r\n";
+    }
+
+    /** A random MIME boundary that does not occur in $content. */
+    private static function boundary(string $content): string
+    {
         do {
             $boundary = 'ws-' . bin2hex(random_bytes(16));
-        } while (str_contains($text . $html, $boundary));
+        } while (str_contains($content, $boundary));
 
-        $headers['Content-Type'] = "multipart/alternative; boundary=\"{$boundary}\"";
-        $part = static fn (string $type, string $body): string => "--{$boundary}\r\n"
-            . "Content-Type: {$type}; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n{$body}\r\n";
-
-        return self::head($headers) . "\r\n"
-            . $part('text/plain', $text)
-            . $part('text/html', $html)
-            . "--{$boundary}--\r\n";
+        return $boundary;
     }
 
     private static function head(array $headers): string
