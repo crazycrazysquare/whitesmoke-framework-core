@@ -13,9 +13,11 @@ use Whitesmoke\Database\Migrations\Migrator;
  * Base class for testing a Whitesmoke app through HTTP, as a browser would.
  *
  * Each test class starts the app on PHP's built-in server (the same router as
- * "php smoke serve") with its own SQLite database, migrated once. Before every test
- * the database is emptied and cookies are forgotten. Emails are written to a log the
- * test can read (sentMail()). Your development database and mail are never touched.
+ * "php smoke serve") with its own SQLite database, migrated once, and its own storage
+ * folder (STORAGE_PATH) for sessions, logs, cache and uploads. Before every test the
+ * database, cache, uploads and mail are emptied and cookies are forgotten. Emails are
+ * written to a log the test can read (sentMail()). Your development database, storage
+ * and mail are never touched.
  */
 abstract class AppTestCase extends TestCase
 {
@@ -42,8 +44,9 @@ abstract class AppTestCase extends TestCase
         return [
             'DB_CONNECTION'  => 'sqlite',
             'DB_DATABASE'    => self::$dir . '/database.sqlite',
+            'STORAGE_PATH'   => self::$dir . '/storage',
+            'CACHE_DRIVER'   => 'file',
             'MAIL_DRIVER'    => 'log',
-            'MAIL_LOG_PATH'  => self::$dir . '/mail',
             'SESSION_SECURE' => 'false',
             'APP_DEBUG'      => 'true',
             'APP_URL'        => 'http://127.0.0.1:' . self::$port,
@@ -53,7 +56,7 @@ abstract class AppTestCase extends TestCase
     public static function setUpBeforeClass(): void
     {
         self::$dir = rtrim(sys_get_temp_dir(), '/\\') . '/whitesmoke-app-test-' . getmypid() . '-' . bin2hex(random_bytes(4));
-        mkdir(self::$dir . '/mail', 0700, true);
+        mkdir(self::$dir . '/storage', 0700, true);
 
         $probe = stream_socket_server('tcp://127.0.0.1:0');
         self::$port = (int) substr((string) strrchr((string) stream_socket_get_name($probe, false), ':'), 1);
@@ -135,7 +138,9 @@ abstract class AppTestCase extends TestCase
         $this->cookies = [];
         $this->token   = null;
 
-        foreach (glob(self::$dir . '/mail/*') ?: [] as $file) {
+        self::remove(self::storagePath('cache/data'));
+        self::remove(self::storagePath('uploads'));
+        foreach (glob(self::storagePath('logs/mail-*.log')) ?: [] as $file) {
             @unlink($file);
         }
     }
@@ -279,7 +284,7 @@ abstract class AppTestCase extends TestCase
     {
         $mails = [];
 
-        foreach (glob(self::$dir . '/mail/mail-*.log') ?: [] as $file) {
+        foreach (glob(self::storagePath('logs/mail-*.log')) ?: [] as $file) {
             foreach (preg_split('~^===== [^\r\n]+ =====\r\n~m', (string) file_get_contents($file), -1, PREG_SPLIT_NO_EMPTY) as $entry) {
                 [$envelope, $raw] = explode("\r\n\r\n", $entry, 2) + ['', ''];
                 [$head, $body]    = explode("\r\n\r\n", $raw, 2) + ['', ''];
@@ -299,6 +304,12 @@ abstract class AppTestCase extends TestCase
         }
 
         return $mails;
+    }
+
+    /** A path in the app's storage folder for this test class (STORAGE_PATH), e.g. storagePath('uploads'). */
+    protected static function storagePath(string $path = ''): string
+    {
+        return self::$dir . '/storage' . ($path === '' ? '' : '/' . ltrim($path, '/'));
     }
 
     private static function pdo(): PDO

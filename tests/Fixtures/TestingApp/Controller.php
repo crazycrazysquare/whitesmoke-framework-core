@@ -11,11 +11,14 @@ final class Controller
 {
     public function form(Request $request): Response
     {
-        $flash = session()->getFlash('saved');
+        $flash  = session()->getFlash('saved');
+        $visits = (int) cache()->get('visits', 0) + 1;
+        cache()->set('visits', $visits);
 
         return Response::html(
             '<p>' . e($flash ?? 'nothing yet') . '</p>'
             . '<p>Notes: ' . table('notes')->count() . '</p>'
+            . '<p>Visits: ' . $visits . '</p>'
             . '<form method="post" action="/save">' . csrf_field() . '<input name="body"></form>'
         );
     }

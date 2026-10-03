@@ -20,7 +20,21 @@ final class AppTestCaseTest extends AppTestCase
             ->assertOk()
             ->assertSee('nothing yet')
             ->assertSee('Notes: 0')
+            ->assertSee('Visits: 1')
             ->assertHeader('X-Frame-Options', 'DENY');
+
+        $this->get('/')->assertSee('Visits: 2');
+    }
+
+    public function testTheAppWritesToItsOwnStorageFolder(): void
+    {
+        $this->get('/');
+        $this->post('/save', ['body' => 'x']);
+
+        $this->assertNotEmpty(glob(self::storagePath('sessions') . '/*') ?: [], 'sessions');
+        $this->assertNotEmpty(glob(self::storagePath('cache/data') . '/*') ?: [], 'cache');
+        $this->assertNotEmpty(glob(self::storagePath('logs') . '/mail-*.log') ?: [], 'mail log');
+        $this->assertDirectoryDoesNotExist(self::basePath() . '/storage', 'the app folder stays untouched');
     }
 
     public function testPostWithCsrfSessionDatabaseAndMail(): void
@@ -47,7 +61,7 @@ final class AppTestCaseTest extends AppTestCase
         $this->assertDatabaseMissing('notes', ['body' => '<b>hi</b> & co']);
         $this->assertSame([], $this->sentMail());
         $this->assertSame([], $this->cookies());
-        $this->get('/')->assertSee('Notes: 0');
+        $this->get('/')->assertSee('Notes: 0')->assertSee('Visits: 1');
     }
 
     public function testPostWithoutTheTokenIsRefused(): void

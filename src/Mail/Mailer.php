@@ -56,7 +56,7 @@ final class Mailer
     /** @param list<string> $recipients every address, Bcc included (they are not in the headers) */
     private function log(string $data, array $recipients): void
     {
-        $dir = (string) ($this->config['log_path'] ?? BASE_PATH . '/storage/logs');
+        $dir = (string) ($this->config['log_path'] ?? storage_path('logs'));
 
         if (!is_dir($dir)) {
             mkdir($dir, 0750, true);

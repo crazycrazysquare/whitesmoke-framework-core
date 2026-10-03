@@ -102,4 +102,37 @@ final class EnvironmentTest extends TestCase
 
         $this->assertSame('default', env('WS_T_NOT_SET_ANYWHERE', 'default'));
     }
+
+    public function testStoragePath(): void
+    {
+        $saved = $_ENV['STORAGE_PATH'] ?? null;
+
+        try {
+            unset($_ENV['STORAGE_PATH']);
+            $this->assertSame(BASE_PATH . '/storage', storage_path());
+            $this->assertSame(BASE_PATH . '/storage/logs', storage_path('logs'));
+
+            foreach (['/srv/app-data/' => '/srv/app-data', 'C:\\data\\app\\' => 'C:\\data\\app', 'D:/app' => 'D:/app', '\\\\server\\share' => '\\\\server\\share'] as $set => $base) {
+                $_ENV['STORAGE_PATH'] = $set;
+                $this->assertSame($base, storage_path(), $set);
+                $this->assertSame($base . '/cache/data', storage_path('/cache/data'), $set);
+            }
+
+            foreach (['storage', './storage', '../outside', 'C:relative', 'true'] as $relative) {
+                $_ENV['STORAGE_PATH'] = $relative;
+                try {
+                    storage_path('logs');
+                    $this->fail("{$relative} must be refused");
+                } catch (RuntimeException $e) {
+                    $this->assertSame('STORAGE_PATH must be an absolute path', $e->getMessage());
+                }
+            }
+        } finally {
+            if ($saved === null) {
+                unset($_ENV['STORAGE_PATH']);
+            } else {
+                $_ENV['STORAGE_PATH'] = $saved;
+            }
+        }
+    }
 }

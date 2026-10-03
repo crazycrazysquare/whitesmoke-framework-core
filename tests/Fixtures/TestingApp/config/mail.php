@@ -5,5 +5,4 @@ return [
     'driver'       => (string) env('MAIL_DRIVER', ''),
     'from_address' => 'app@example.test',
     'from_name'    => 'Testing App',
-    'log_path'     => (string) env('MAIL_LOG_PATH'),
 ];

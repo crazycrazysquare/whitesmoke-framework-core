@@ -57,7 +57,7 @@ function logger(): Whitesmoke\Log\Logger
     if ($logger === null) {
         $file   = BASE_PATH . '/config/logging.php';
         $config = (is_file($file) ? require $file : []) + [
-            'path'  => BASE_PATH . '/storage/logs',
+            'path'  => storage_path('logs'),
             'level' => 'info',
             'days'  => 14,
         ];
@@ -111,12 +111,32 @@ function env(string $key, mixed $default = null): mixed
     };
 }
 
+/**
+ * A path in the folder the app writes to: sessions, logs, cache, uploads. That is
+ * storage/ unless STORAGE_PATH names another folder, such as a temporary one for tests.
+ * STORAGE_PATH must be absolute. php smoke env:cache always writes to storage/cache.
+ */
+function storage_path(string $path = ''): string
+{
+    $base = env('STORAGE_PATH');
+
+    if ($base === null) {
+        $base = BASE_PATH . '/storage';
+    } elseif (!is_string($base) || !preg_match('~^(?:/|[A-Za-z]:[/\\\\]|\\\\\\\\)~', $base)) {
+        throw new RuntimeException('STORAGE_PATH must be an absolute path');
+    } else {
+        $base = rtrim($base, '/\\');
+    }
+
+    return $path === '' ? $base : $base . '/' . ltrim($path, '/\\');
+}
+
 /** Uploaded files in storage/uploads (see Whitesmoke\Storage\Uploads). */
 function uploads(): Whitesmoke\Storage\Uploads
 {
     static $uploads = null;
 
-    return $uploads ??= new Whitesmoke\Storage\Uploads(BASE_PATH . '/storage/uploads');
+    return $uploads ??= new Whitesmoke\Storage\Uploads(storage_path('uploads'));
 }
 
 /** The cache from config/cache.php: files in storage/cache/data unless configured otherwise. */
@@ -128,7 +148,7 @@ function cache(): Whitesmoke\Cache\Cache
         $file   = BASE_PATH . '/config/cache.php';
         $config = (is_file($file) ? require $file : []) + [
             'driver' => 'file',
-            'path'   => BASE_PATH . '/storage/cache/data',
+            'path'   => storage_path('cache/data'),
             'table'  => 'cache',
             'prefix' => '',
         ];
