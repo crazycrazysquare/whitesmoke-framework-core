@@ -33,4 +33,12 @@ final class Controller
 
         return Response::redirect('/');
     }
+
+    /** A new session id and CSRF token, as after a login. */
+    public function renew(Request $request): Response
+    {
+        session()->regenerate();
+
+        return Response::redirect('/');
+    }
 }

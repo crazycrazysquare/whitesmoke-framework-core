@@ -16,6 +16,7 @@ use RuntimeException;
  *
  * - Real environment variables (PHP-FPM pool, shell, Docker) always win over .env.
  * - With storage/cache/env.php present (php smoke env:cache), .env is not parsed at all.
+ * - With IGNORE_DOTENV=true in the real environment, neither is read (tests).
  */
 final class Environment
 {
@@ -27,6 +28,12 @@ final class Environment
             return;
         }
         self::$loaded = true;
+
+        // Set by Whitesmoke\Testing\AppTestCase: tests get every value from the real
+        // environment, the same on every machine, whatever .env holds.
+        if (getenv('IGNORE_DOTENV') === 'true') {
+            return;
+        }
 
         $cache = self::cachePath($basePath);
 

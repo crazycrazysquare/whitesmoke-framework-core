@@ -4,6 +4,7 @@ declare(strict_types=1);
 use Whitesmoke\Tests\Fixtures\TestingApp\Controller;
 
 return [
-    'GET /'      => [Controller::class, 'form'],
-    'POST /save' => [Controller::class, 'save', ['csrf']],
+    'GET /'       => [Controller::class, 'form'],
+    'POST /save'  => [Controller::class, 'save', ['csrf']],
+    'POST /renew' => [Controller::class, 'renew', ['csrf']],
 ];

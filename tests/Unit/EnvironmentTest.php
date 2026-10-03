@@ -91,6 +91,29 @@ final class EnvironmentTest extends TestCase
         $this->assertSame('changed', env('WS_T_NAME'));
     }
 
+    public function testIgnoreDotenvSkipsFileAndCache(): void
+    {
+        try {
+            $this->write("WS_T_NAME=from-dotenv\n");
+
+            putenv('IGNORE_DOTENV=1');
+            Environment::load($this->dir);
+            $this->assertSame('from-dotenv', env('WS_T_NAME'), 'only exactly "true" switches .env off');
+
+            $this->reset();
+            putenv('IGNORE_DOTENV=true');
+            Environment::load($this->dir);
+            $this->assertNull(env('WS_T_NAME'), '.env');
+
+            Environment::cache($this->dir);
+            $this->reset();
+            Environment::load($this->dir);
+            $this->assertNull(env('WS_T_NAME'), 'env cache');
+        } finally {
+            putenv('IGNORE_DOTENV');
+        }
+    }
+
     public function testEnvConversions(): void
     {
         $values = ['true' => true, '(true)' => true, 'FALSE' => false, 'null' => null, 'empty' => '', 'x' => 'x'];

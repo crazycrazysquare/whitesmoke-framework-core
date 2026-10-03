@@ -70,12 +70,39 @@ final class AppTestCaseTest extends AppTestCase
         $this->assertDatabaseMissing('notes', ['body' => 'x']);
     }
 
+    public function testPostAfterANewSessionUsesTheNewToken(): void
+    {
+        $this->post('/renew')->assertRedirect('/');
+        $this->post('/save', ['body' => 'after renew'])->assertRedirect('/');
+
+        $this->assertDatabaseHas('notes', ['body' => 'after renew']);
+    }
+
     public function testForgettingCookiesStartsANewSession(): void
     {
         $this->post('/save', ['body' => 'one']);
         $this->forgetCookies();
 
         $this->get('/')->assertSee('nothing yet')->assertSee('Notes: 1');
+    }
+
+    public function testFoldersOfOldRunsAreRemoved(): void
+    {
+        $base = rtrim(sys_get_temp_dir(), '/\\') . '/whitesmoke-app-test-0-' . bin2hex(random_bytes(4));
+        foreach (['old' => time() - 7200, 'recent' => time() - 60] as $name => $time) {
+            mkdir("{$base}-{$name}/storage", 0700, true);
+            touch("{$base}-{$name}/database.sqlite", $time);
+        }
+
+        (new \ReflectionMethod(AppTestCase::class, 'removeOldRuns'))->invoke(null);
+
+        $this->assertDirectoryDoesNotExist("{$base}-old");
+        $this->assertFileExists("{$base}-recent/database.sqlite", 'another run may still use it');
+        $this->assertFileExists(self::storagePath() . '/../database.sqlite', 'this run');
+
+        unlink("{$base}-recent/database.sqlite");
+        rmdir("{$base}-recent/storage");
+        rmdir("{$base}-recent");
     }
 
     public function testOnlyLocalPathsCanBeRequested(): void

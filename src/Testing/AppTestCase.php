@@ -13,11 +13,15 @@ use Whitesmoke\Database\Migrations\Migrator;
  * Base class for testing a Whitesmoke app through HTTP, as a browser would.
  *
  * Each test class starts the app on PHP's built-in server (the same router as
- * "php smoke serve") with its own SQLite database, migrated once, and its own storage
- * folder (STORAGE_PATH) for sessions, logs, cache and uploads. Before every test the
- * database, cache, uploads and mail are emptied and cookies are forgotten. Emails are
- * written to a log the test can read (sentMail()). Your development database, storage
- * and mail are never touched.
+ * "php smoke serve"). The test run has its own SQLite database, migrated, and its own
+ * storage folder (STORAGE_PATH) for sessions, logs, cache and uploads, in a temporary
+ * folder removed at the end. Before every test the database, cache, uploads and mail
+ * are emptied and cookies are forgotten. Emails are written to a log the test can read
+ * (sentMail()). Your development database, storage and mail are never touched.
+ *
+ * The test process gets the same settings, so table() and db() in a test use the test
+ * database. The folder stays the same for the whole run because db() keeps its
+ * connection for the whole process.
  */
 abstract class AppTestCase extends TestCase
 {
@@ -38,25 +42,34 @@ abstract class AppTestCase extends TestCase
         return BASE_PATH;
     }
 
-    /** Environment for the app under test. Override to add your own; keep these. */
+    /**
+     * The app's settings in tests. .env is not read, so tests behave the same on every
+     * machine. Add your own with: return ['MY_KEY' => 'value'] + parent::environment();
+     */
     protected static function environment(): array
     {
         return [
-            'DB_CONNECTION'  => 'sqlite',
-            'DB_DATABASE'    => self::$dir . '/database.sqlite',
-            'STORAGE_PATH'   => self::$dir . '/storage',
-            'CACHE_DRIVER'   => 'file',
-            'MAIL_DRIVER'    => 'log',
-            'SESSION_SECURE' => 'false',
-            'APP_DEBUG'      => 'true',
-            'APP_URL'        => 'http://127.0.0.1:' . self::$port,
+            'IGNORE_DOTENV'     => 'true',
+            'DB_CONNECTION'     => 'sqlite',
+            'DB_DATABASE'       => self::$dir . '/database.sqlite',
+            'STORAGE_PATH'      => self::$dir . '/storage',
+            'CACHE_DRIVER'      => 'file',
+            'MAIL_DRIVER'       => 'log',
+            'MAIL_FROM_ADDRESS' => 'app@example.test',
+            'SESSION_SECURE'    => 'false',
+            'APP_DEBUG'         => 'true',
+            'APP_URL'           => 'http://127.0.0.1:' . self::$port,
         ];
     }
 
     public static function setUpBeforeClass(): void
     {
-        self::$dir = rtrim(sys_get_temp_dir(), '/\\') . '/whitesmoke-app-test-' . getmypid() . '-' . bin2hex(random_bytes(4));
-        mkdir(self::$dir . '/storage', 0700, true);
+        if (self::$dir === '') {
+            self::removeOldRuns();
+            self::$dir = rtrim(sys_get_temp_dir(), '/\\') . '/whitesmoke-app-test-' . getmypid() . '-' . bin2hex(random_bytes(4));
+            mkdir(self::$dir . '/storage', 0700, true);
+            register_shutdown_function(static fn () => self::remove(self::$dir));
+        }
 
         $probe = stream_socket_server('tcp://127.0.0.1:0');
         self::$port = (int) substr((string) strrchr((string) stream_socket_get_name($probe, false), ':'), 1);
@@ -121,8 +134,6 @@ abstract class AppTestCase extends TestCase
             }
         }
         self::$saved = [];
-
-        self::remove(self::$dir);
     }
 
     protected function setUp(): void
@@ -185,6 +196,7 @@ abstract class AppTestCase extends TestCase
     protected function forgetCookies(string ...$names): void
     {
         $this->cookies = $names === [] ? [] : array_diff_key($this->cookies, array_flip($names));
+        $this->token   = null;
     }
 
     /** @return array<string, string> the cookies the "browser" holds */
@@ -243,6 +255,11 @@ abstract class AppTestCase extends TestCase
     {
         [$pair] = explode(';', $line, 2);
         [$name, $value] = explode('=', $pair, 2) + ['', ''];
+
+        // A new session (after login, say) has a new CSRF token: post() fetches it again.
+        if (($this->cookies[$name] ?? null) !== $value) {
+            $this->token = null;
+        }
 
         if ($value === '' || $value === 'deleted' || preg_match('~;\s*Max-Age=0~i', $line)) {
             unset($this->cookies[$name]);
@@ -315,6 +332,21 @@ abstract class AppTestCase extends TestCase
     private static function pdo(): PDO
     {
         return Connection::make(['driver' => 'sqlite', 'database' => self::$dir . '/database.sqlite']);
+    }
+
+    /**
+     * Folders of earlier runs, unused for an hour. On Windows a run cannot delete its own
+     * database at the end while db() in the test process still has it open.
+     */
+    private static function removeOldRuns(): void
+    {
+        foreach (glob(rtrim(sys_get_temp_dir(), '/\\') . '/whitesmoke-app-test-*', GLOB_ONLYDIR) ?: [] as $old) {
+            $used = @filemtime($old . '/database.sqlite') ?: @filemtime($old);
+
+            if ($used !== false && $used < time() - 3600) {
+                self::remove($old);
+            }
+        }
     }
 
     private static function remove(string $dir): void
