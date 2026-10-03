@@ -16,9 +16,18 @@ final class Query
     private const JOIN_OPERATORS = ['=', '!=', '<>', '<', '<=', '>', '>='];
     private const NAME           = '[A-Za-z_][A-Za-z0-9_]*';
 
+    private const COMPARISONS    = ['=', '!=', '<>', '<', '<=', '>', '>='];
+
     private string $driver;
-    /** @var list<string> quoted select expressions */
-    private array $columns = ['*'];
+    /** @var list<array{sql: string, source: string, name: ?string}> chosen columns; empty means * */
+    private array $columns = [];
+    /** @var array<string, array{function: string, sql: string}> aggregate columns by result name */
+    private array $aggregates = [];
+    /** @var list<string> groupBy() columns as given */
+    private array $groups = [];
+    /** @var list<string> */
+    private array $havings = [];
+    private array $havingBindings = [];
     /** @var list<string> quoted JOIN clauses */
     private array $joins = [];
     /** @var list<string> conditions, combined with $joiner */
@@ -39,7 +48,79 @@ final class Query
     /** Columns to fetch: 'name', 'users.name', 'users.*' or 'users.name AS author'. */
     public function select(string ...$columns): self
     {
-        $this->columns = $columns === [] ? ['*'] : array_map($this->selectColumn(...), $columns);
+        $this->columns = array_map($this->selectColumn(...), $columns);
+        $this->checkNames();
+        return $this;
+    }
+
+    /** COUNT as a result column: selectCount('*', 'invoices') counts rows, a column counts its non-NULL values. */
+    public function selectCount(string $column, string $as): self
+    {
+        return $this->addAggregate('COUNT', $column, $as);
+    }
+
+    public function selectSum(string $column, string $as): self
+    {
+        return $this->addAggregate('SUM', $column, $as);
+    }
+
+    public function selectAvg(string $column, string $as): self
+    {
+        return $this->addAggregate('AVG', $column, $as);
+    }
+
+    public function selectMin(string $column, string $as): self
+    {
+        return $this->addAggregate('MIN', $column, $as);
+    }
+
+    public function selectMax(string $column, string $as): self
+    {
+        return $this->addAggregate('MAX', $column, $as);
+    }
+
+    /**
+     * One result row per distinct value of these columns. Every plain column in select()
+     * must be listed here; totals come from selectSum(), selectCount() and the others.
+     */
+    public function groupBy(string ...$columns): self
+    {
+        if ($columns === []) {
+            throw new InvalidArgumentException('groupBy() needs at least one column');
+        }
+
+        array_map($this->quote(...), $columns);
+        array_push($this->groups, ...$columns);
+        return $this;
+    }
+
+    /**
+     * Keep only groups whose total matches: having('revenue', '>', 1000), where revenue
+     * is the name given in selectSum() or another select method. Several are joined with AND.
+     */
+    public function having(string $aggregate, string $operator, mixed $value): self
+    {
+        $selected = $this->aggregates[$aggregate]
+            ?? throw new InvalidArgumentException("having() needs the name of a selectCount/Sum/Avg/Min/Max column, not: {$aggregate}");
+
+        if (!in_array($operator, self::COMPARISONS, true)) {
+            throw new InvalidArgumentException("Invalid having operator: {$operator}");
+        }
+
+        // Counts, sums and averages are numbers: a numeric string (from a form) becomes one,
+        // anything else is refused. SQLite would compare a number with text, never numerically.
+        if (in_array($selected['function'], ['COUNT', 'SUM', 'AVG'], true) && !is_int($value) && !is_float($value)) {
+            if (!is_string($value) || !is_numeric($value)) {
+                throw new InvalidArgumentException("having() on {$aggregate} needs a number");
+            }
+            $value = preg_match('~^-?\d{1,18}\z~', $value) ? (int) $value : (float) $value;
+        }
+        if (!is_int($value) && !is_float($value) && !is_string($value)) {
+            throw new InvalidArgumentException('having() needs a number or a string to compare with');
+        }
+
+        $this->havings[]        = "{$selected['sql']} {$operator} " . $this->mark($value);
+        $this->havingBindings[] = $value;
         return $this;
     }
 
@@ -129,15 +210,16 @@ final class Query
 
     public function get(): array
     {
-        return $this->run($this->selectSql(), $this->bindings)->fetchAll();
+        return array_map($this->castAggregates(...), $this->run($this->selectSql(), [...$this->bindings, ...$this->havingBindings])->fetchAll());
     }
 
     public function first(): ?array
     {
         $query = clone $this;
         $query->limit = 1;
+        $row   = $query->run($query->selectSql(), [...$query->bindings, ...$query->havingBindings])->fetch();
 
-        return $query->run($query->selectSql(), $query->bindings)->fetch() ?: null;
+        return $row === false ? null : $this->castAggregates($row);
     }
 
     /**
@@ -164,37 +246,29 @@ final class Query
         return new Page($items, $total, $page, $perPage);
     }
 
+    /** Matching rows; with groupBy(), the number of groups (what get() would return). */
     public function count(): int
     {
-        $sql = 'SELECT COUNT(*)' . $this->fromSql() . $this->whereSql();
+        if ($this->groups === []) {
+            $this->groupSql();   // refuses having() without groupBy()
+            $sql = 'SELECT COUNT(*)' . $this->fromSql() . $this->whereSql();
+        } else {
+            $sql = 'SELECT COUNT(*) FROM (SELECT 1 AS ' . $this->quote('ws_one') . $this->fromSql() . $this->whereSql() . $this->groupSql() . ') AS ' . $this->quote('ws_groups');
+        }
 
-        return (int) $this->run($sql, $this->bindings)->fetchColumn();
+        return (int) $this->run($sql, [...$this->bindings, ...$this->havingBindings])->fetchColumn();
     }
 
     /** Total of $column over the matching rows; 0 when none match. An int for whole numbers. */
     public function sum(string $column): int|float
     {
-        $value = $this->aggregate('SUM', $column);
-
-        return match (true) {
-            $value === null                                                  => 0,
-            is_int($value), is_float($value)                                 => $value,
-            is_string($value) && preg_match('~^-?\d{1,18}\z~', $value) === 1 => (int) $value,
-            is_numeric($value)                                               => (float) $value,
-            default => throw new UnexpectedValueException('SUM returned a non-numeric value'),
-        };
+        return self::castSum($this->aggregate('SUM', $column));
     }
 
     /** Average of $column over the matching rows (never rounded to a whole number); null when none match. */
     public function avg(string $column): ?float
     {
-        $value = $this->aggregate('AVG', $column);
-
-        if ($value !== null && !is_numeric($value)) {
-            throw new UnexpectedValueException('AVG returned a non-numeric value');
-        }
-
-        return $value === null ? null : (float) $value;
+        return self::castAvg($this->aggregate('AVG', $column));
     }
 
     /** Smallest value of $column, as get() would return it; null when no row matches. */
@@ -286,7 +360,26 @@ final class Query
             }, []];
         }
 
-        return [$this->quote($column) . " {$operator} ?", [$value]];
+        return [$this->quote($column) . " {$operator} " . $this->mark($value), [$value]];
+    }
+
+    /**
+     * The placeholder for a value. PDO binds a float as text: next to a whole-number column
+     * or total, PostgreSQL and SQL Server refuse it and SQLite compares it as text. A cast
+     * makes it a number again; the value itself stays bound.
+     */
+    private function mark(mixed $value): string
+    {
+        if (is_float($value) && !is_finite($value)) {
+            throw new InvalidArgumentException('Cannot compare with INF or NAN');
+        }
+
+        return !is_float($value) ? '?' : match ($this->driver) {
+            'sqlite' => 'CAST(? AS REAL)',
+            'pgsql'  => 'CAST(? AS DOUBLE PRECISION)',
+            'sqlsrv' => 'CAST(? AS FLOAT)',
+            default  => '?',
+        };
     }
 
     /** @return array{0: string, 1: list<mixed>} */
@@ -298,7 +391,7 @@ final class Query
             return ['1 = 0', []];
         }
 
-        return [$column . ' IN (' . implode(', ', array_fill(0, count($values), '?')) . ')', array_values($values)];
+        return [$column . ' IN (' . implode(', ', array_map($this->mark(...), $values)) . ')', array_values($values)];
     }
 
     /** @return array{0: string, 1: list<mixed>} */
@@ -310,7 +403,8 @@ final class Query
         if ($group->wheres === []) {
             throw new LogicException('whereGroup() needs at least one condition');
         }
-        if ($group->columns !== ['*'] || $group->joins !== [] || $group->orders !== [] || $group->limit !== null || $group->offset !== null) {
+        if ($group->columns !== [] || $group->aggregates !== [] || $group->groups !== [] || $group->havings !== []
+            || $group->joins !== [] || $group->orders !== [] || $group->limit !== null || $group->offset !== null) {
             throw new LogicException('Only where conditions belong in whereGroup()');
         }
 
@@ -337,22 +431,89 @@ final class Query
         if ($this->limit !== null || $this->offset !== null) {
             throw new LogicException(strtolower($function) . '() covers every matching row; remove limit() and offset()');
         }
+        if ($this->groups !== [] || $this->havings !== []) {
+            throw new LogicException(strtolower($function) . '() gives one total; for one per group use select' . ucfirst(strtolower($function)) . '() with groupBy()');
+        }
 
-        $column = $this->quote($column);
-
-        // SQL Server averages whole-number columns as whole numbers (AVG of 1 and 2 is 1).
-        $expression = $function === 'AVG' && $this->driver === 'sqlsrv'
-            ? "AVG(CAST({$column} AS FLOAT))"
-            : "{$function}({$column})";
-
-        $value = $this->run("SELECT {$expression}" . $this->fromSql() . $this->whereSql(), $this->bindings)->fetchColumn();
+        $value = $this->run('SELECT ' . $this->aggregateSql($function, $column) . $this->fromSql() . $this->whereSql(), $this->bindings)->fetchColumn();
 
         return $value === false ? null : $value;
     }
 
+    private function addAggregate(string $function, string $column, string $as): self
+    {
+        if (!preg_match('~^' . self::NAME . '\z~', $as)) {
+            throw new InvalidArgumentException("Invalid column name: {$as}");
+        }
+        if (isset($this->aggregates[$as])) {
+            throw new InvalidArgumentException("Two result columns are named {$as}");
+        }
+
+        $this->aggregates[$as] = ['function' => $function, 'sql' => $this->aggregateSql($function, $column)];
+        $this->checkNames();
+        return $this;
+    }
+
+    private function aggregateSql(string $function, string $column): string
+    {
+        $column = $column === '*' && $function === 'COUNT' ? '*' : $this->quote($column);
+
+        // SQL Server averages whole-number columns as whole numbers (AVG of 1 and 2 is 1).
+        return $function === 'AVG' && $this->driver === 'sqlsrv'
+            ? "AVG(CAST({$column} AS FLOAT))"
+            : "{$function}({$column})";
+    }
+
+    /** Same types on every database: COUNT an int, SUM an int or float, AVG a float or null. */
+    private function castAggregates(array $row): array
+    {
+        foreach ($this->aggregates as $name => $aggregate) {
+            $row[$name] = match ($aggregate['function']) {
+                'COUNT' => (int) $row[$name],
+                'SUM'   => self::castSum($row[$name]),
+                'AVG'   => self::castAvg($row[$name]),
+                default => $row[$name],
+            };
+        }
+
+        return $row;
+    }
+
+    private static function castSum(mixed $value): int|float
+    {
+        return match (true) {
+            $value === null                                                  => 0,
+            is_int($value), is_float($value)                                 => $value,
+            is_string($value) && preg_match('~^-?\d{1,18}\z~', $value) === 1 => (int) $value,
+            is_numeric($value)                                               => (float) $value,
+            default => throw new UnexpectedValueException('SUM returned a non-numeric value'),
+        };
+    }
+
+    private static function castAvg(mixed $value): ?float
+    {
+        if ($value !== null && !is_numeric($value)) {
+            throw new UnexpectedValueException('AVG returned a non-numeric value');
+        }
+
+        return $value === null ? null : (float) $value;
+    }
+
+    /** Result column names must be unique, or one value would silently replace the other. */
+    private function checkNames(): void
+    {
+        $names = [...array_filter(array_column($this->columns, 'name')), ...array_keys($this->aggregates)];
+
+        foreach (array_count_values(array_map('strtolower', $names)) as $name => $count) {
+            if ($count > 1) {
+                throw new InvalidArgumentException("Two result columns are named {$name}; rename one with AS");
+            }
+        }
+    }
+
     private function selectSql(): string
     {
-        $sql = 'SELECT ' . implode(', ', $this->columns) . $this->fromSql() . $this->whereSql();
+        $sql = 'SELECT ' . $this->selectList() . $this->fromSql() . $this->whereSql() . $this->groupSql();
 
         if ($this->offset !== null && $this->limit === null) {
             throw new LogicException('Offset requires a limit');
@@ -378,6 +539,41 @@ final class Query
         return $sql;
     }
 
+    private function selectList(): string
+    {
+        if ($this->groups !== [] || $this->aggregates !== []) {
+            // PostgreSQL, SQL Server and MySQL refuse other columns; SQLite would return any row's value.
+            foreach ($this->columns as $column) {
+                if ($column['name'] === null) {
+                    throw new LogicException("A grouped query cannot select {$column['source']}: select the grouped columns by name");
+                }
+                if (!in_array($column['source'], $this->groups, true)) {
+                    throw new LogicException("{$column['source']} is selected but not in groupBy(): group by it, or use it in selectMin() or another select method");
+                }
+            }
+            if ($this->columns === [] && $this->aggregates === []) {
+                throw new LogicException('Choose the columns of a grouped query with select()');
+            }
+        }
+
+        $parts = array_column($this->columns, 'sql');
+        foreach ($this->aggregates as $name => $aggregate) {
+            $parts[] = $aggregate['sql'] . ' AS ' . $this->quote($name);
+        }
+
+        return $parts === [] ? '*' : implode(', ', $parts);
+    }
+
+    private function groupSql(): string
+    {
+        if ($this->havings !== [] && $this->groups === []) {
+            throw new LogicException('having() needs groupBy()');
+        }
+
+        return ($this->groups ? ' GROUP BY ' . implode(', ', array_map($this->quote(...), $this->groups)) : '')
+            . ($this->havings ? ' HAVING ' . implode(' AND ', $this->havings) : '');
+    }
+
     private function fromSql(): string
     {
         return ' FROM ' . $this->quote($this->table) . implode('', $this->joins);
@@ -398,24 +594,30 @@ final class Query
         if ($this->joins !== []) {
             throw new LogicException("Refusing to {$action} with a join: select the ids first, then {$action} with whereIn()");
         }
+        if ($this->groups !== [] || $this->havings !== [] || $this->aggregates !== []) {
+            throw new LogicException("Refusing to {$action} a grouped query");
+        }
         if ($this->wheres === []) {
             throw new LogicException("Refusing to {$action} without a WHERE clause");
         }
     }
 
-    private function selectColumn(string $column): string
+    /** @return array{sql: string, source: string, name: ?string} name: the key in result rows, null for * */
+    private function selectColumn(string $column): array
     {
         if ($column === '*') {
-            return '*';
+            return ['sql' => '*', 'source' => '*', 'name' => null];
         }
         if (preg_match('~^(' . self::NAME . ')\.\*\z~', $column, $m)) {
-            return $this->quote($m[1]) . '.*';
+            return ['sql' => $this->quote($m[1]) . '.*', 'source' => $column, 'name' => null];
         }
         if (preg_match('~^(\S+) +AS +(' . self::NAME . ')\z~i', $column, $m)) {
-            return $this->quote($m[1]) . ' AS ' . $this->quote($m[2]);
+            return ['sql' => $this->quote($m[1]) . ' AS ' . $this->quote($m[2]), 'source' => $m[1], 'name' => $m[2]];
         }
 
-        return $this->quote($column);
+        $parts = explode('.', $column);
+
+        return ['sql' => $this->quote($column), 'source' => $column, 'name' => end($parts)];
     }
 
     private function tableName(string $table): string

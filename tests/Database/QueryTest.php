@@ -106,6 +106,26 @@ final class QueryTest extends DatabaseTestCase
         }
     }
 
+    public function testDecimalsAgainstWholeNumberColumns(): void
+    {
+        // PDO binds floats as text: PostgreSQL and SQL Server refused them next to an integer column.
+        $this->assertSame(2, table('q_users')->where('score', '>', 25.5)->count());
+        $this->assertSame(2, table('q_users')->where('score', '<=', 20.0)->count());
+        $this->assertSame(2, table('q_users')->whereIn('score', [10.0, 40.0, 15.5])->count());
+        $this->assertSame(2, table('q_users')->where('score', '<', 10.5)->orWhere('score', '>', 39.5)->count());
+        $this->assertSame(1, table('q_users')->where('score', '>', 35.5)->update(['active' => false]));
+        $this->assertSame(['Maria'], array_column(table('q_users')->where('active', '=', false)->get(), 'name'));
+
+        foreach ([fn () => table('q_users')->where('score', '<', INF), fn () => table('q_users')->whereIn('score', [1, NAN])] as $bad) {
+            try {
+                $bad();
+                $this->fail('INF and NAN must be refused');
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     public function testValuesAreNeverInterpretedAsSql(): void
     {
         $evil = "x' OR '1'='1";
